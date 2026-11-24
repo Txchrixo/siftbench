@@ -1,0 +1,48 @@
+import json
+
+from reviewbench.cli import main
+from reviewbench.fixture import FixtureTransport
+from reviewbench.grading import ScoreCalculator, VerdictImporter, build_bundle, claims_for_grading
+from reviewbench.manifest import ManifestLoader, canonical_json, digest
+from reviewbench.runner import CampaignRunner
+from reviewbench.store import RunStore
+
+
+def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
+    rubric = tmp_path / "rubric.json"
+    rubric.write_bytes(canonical_json({"expected": [{"case_id": "pagination", "condition": "code_only",
+                                                       "expected_id": "same-time", "matching_criteria": "Rows share a timestamp"}]}))
+    manifest_data.update(rubric_digest=digest(rubric.read_bytes()), settling_seconds=0)
+    manifest = ManifestLoader.parse(manifest_data)
+    state = tmp_path / "state"
+    store = RunStore(state)
+    transport = FixtureTransport({"one": ["A row with the same timestamp would be skipped. <script>"], "two": []})
+    statuses = CampaignRunner(store, transport).step(manifest)
+    assert [row["status"] for row in statuses] == ["completed", "completed"]
+    assert len(transport.pulls) == 2
+    assert CampaignRunner(RunStore(state), transport).step(manifest) == statuses
+    assert len(transport.pulls) == 2
+
+    claim, = claims_for_grading(store, manifest.run_id)
+    assert "source_url" not in claim
+    grades = tmp_path / "grades.jsonl"
+    grades.write_bytes(canonical_json({"claim_id": claim["claim_id"], "decision": "confirmed_expected",
+                                      "expected_id": "same-time", "rationale": "Only a timestamp is compared.",
+                                      "evidence": [{"type": "test", "text": "Expected ID 42 on page two, got no rows."}]}) + b"\n")
+    VerdictImporter(store).load(manifest.run_id, rubric, grades)
+    VerdictImporter(store).load(manifest.run_id, rubric, grades)
+    bundle = build_bundle(store, manifest.run_id)
+    assert bundle["pairs"][0]["claims"][0]["revision"] == 1
+    results = ScoreCalculator.calculate(bundle)["providers"]
+    assert (results["one"]["matched"], results["one"]["expected"], results["two"]["matched"]) == (1, 1, 0)
+
+    first = tmp_path / "first"
+    assert main(["--state-dir", str(state), "report", "--run-id", "pilot", "--out", str(first)]) == 0
+    html = (first / "report.html").read_text(encoding="utf-8")
+    assert "Fixture run" in html and "&lt;script&gt;" in html and "<script>" not in html
+    assert "#discussion_r1" in html and "Expected ID 42" in html
+    assert json.loads((first / "results.json").read_bytes()) == bundle
+    replay = tmp_path / "replay"
+    assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0
+    for name in ("report.html", "summary.md", "results.json"):
+        assert (first / name).read_bytes() == (replay / name).read_bytes()

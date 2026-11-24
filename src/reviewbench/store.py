@@ -254,6 +254,11 @@ class RunStore:
                        (now, attempt_id))
             return db.execute("SELECT first_completion_at FROM attempt WHERE attempt_id = ?", (attempt_id,)).fetchone()[0]
 
+    def schedule_poll(self, attempt_id: str, next_poll: float, reason: str) -> None:
+        with self.connect() as db:
+            db.execute("UPDATE attempt SET next_poll_at = ?, reason = ? WHERE attempt_id = ?",
+                       (next_poll, reason, attempt_id))
+
     def freeze_capture(self, attempt_id: str, head_sha: str, signal: str, now: float, raw: bytes,
                        claims: list[tuple[str, str, str | None, str]]) -> None:
         artifact_id = self.save_artifact(raw, "review_capture")

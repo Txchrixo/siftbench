@@ -1,0 +1,4 @@
+{
+  "fixture-one": ["The strict timestamp filter skips other rows created at the same time as the last row."],
+  "fixture-two": []
+}

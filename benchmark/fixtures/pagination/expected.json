@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "case_id": "pagination",
+      "condition": "code_only",
+      "expected_id": "same-time",
+      "matching_criteria": "Explain that rows sharing the current timestamp can be skipped."
+    }
+  ]
+}

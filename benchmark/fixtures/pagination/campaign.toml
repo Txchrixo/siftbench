@@ -1,0 +1,26 @@
+run_id = "pagination-pilot"
+allowed_repositories = ["siftbench-fixture/reviewer-one", "siftbench-fixture/reviewer-two"]
+rubric_digest = "5a6e713ea46b12abafebeec02b34ad006fcd69b3aff1e3b0bc75598b4b4ebfda"
+timeout_seconds = 60
+settling_seconds = 0
+
+[[cases]]
+case_id = "pagination"
+condition = "code_only"
+title = "Page reports by scheduled time"
+body = "Fixture case: return the next report using only the previous report's scheduled time."
+base_ref = "main"
+base_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+head_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+[[targets]]
+provider_id = "fixture-one"
+condition = "code_only"
+repository = "siftbench-fixture/reviewer-one"
+publisher = "fixture-one[bot]"
+
+[[targets]]
+provider_id = "fixture-two"
+condition = "code_only"
+repository = "siftbench-fixture/reviewer-two"
+publisher = "fixture-two[bot]"
