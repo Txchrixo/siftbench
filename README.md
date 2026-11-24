@@ -62,3 +62,10 @@ reviewbench resume --run-id pagination-live-pilot-v2 --execute
 The default CI workflow uses fixtures and read-only workflow permissions. The optional `doctor --github` command checks privacy and pinned commits without creating branches, opening PRs, or requesting reviews.
 
 Keep the run store and raw artifacts private. The HTML and JSON exports still include original reviewer text and evidence excerpts. Read the bundle and check who can open its source links before sharing it. Once the pilot is archived, close the experimental PRs without merging and remove reviewer access when those repositories are no longer needed. Retain the original PRs when a report links to them.
+
+## Add a reviewer
+
+1. Prepare a private repository for the provider and condition. Seed the same application refs as the comparison repository and scope the new GitHub App to its own test repository.
+2. Add that repository to the manifest allowlist and add a `[[targets]]` entry with its provider ID, condition, repository, verified GitHub publisher, and trigger mode. Use a new run ID when the configuration changes.
+3. Use an independent case to check where the app publishes findings and how it signals a finished review with no findings. `ReviewerAdapter` accepts a submitted GitHub review by the configured publisher on the pinned head. If the app relies on a GitHub check, set `completion_check` only after verifying the exact check name, app slug, pull request association, and outcomes. A provider that publishes through a different API needs a corresponding transport and contract tests before it can count toward coverage.
+4. Run the manifest preflight and the pilot. Resume it on the existing PR and verify the exported source links. See `tests/test_github.py` for the publisher, revision, private repository, and rate-limit contract.
