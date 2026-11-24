@@ -1,0 +1,28 @@
+{
+  "expected": [
+    {
+      "case_id": "01",
+      "condition": "code_only",
+      "expected_id": "pagination-timestamp-ties",
+      "matching_criteria": "Explain that a page can end within a group of equal scheduled_at values. The next cursor keeps only the timestamp and the strict comparison excludes remaining rows in the group, despite sorting by ID as a tie-breaker."
+    },
+    {
+      "case_id": "02",
+      "condition": "code_only",
+      "expected_id": "csv-fields-lose-escaping",
+      "matching_criteria": "Explain how replacing csv.writer with comma joining corrupts a report field containing a comma, quote, or newline. Streaming the query is compatible with retaining CSV escaping."
+    },
+    {
+      "case_id": "03",
+      "condition": "code_only",
+      "expected_id": "delivery-remainder-skipped",
+      "matching_criteria": "Explain that the loop runs only for complete batches of 20 and leaves due jobs in a trailing partial batch undelivered. Fewer than 20 due jobs produce zero deliveries."
+    },
+    {
+      "case_id": "05",
+      "condition": "snapshot",
+      "expected_id": "archive-request-rejected-at-cedar",
+      "matching_criteria": "Use the supplied snapshot to explain that Cedar rejects its first 50-row request because its maximum is 40 and it has 70 ready rows. Elm's maximum of 100 allows both requests. Do not infer whether a later request runs unless the evidence establishes failure handling."
+    }
+  ]
+}
