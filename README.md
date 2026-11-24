@@ -20,3 +20,5 @@ To run from an existing checkout with pytest installed, `python -m pytest` resol
 ## Access boundaries
 
 Develop and test against independent fixture cases before scheduling official cases. Store actual tokens outside the repository. Live integration needs access to the authorized test repositories and reviewer installations scoped to those repositories. A deployment verification run needs a separate AWS role and explicit operator initiation. See [the plan's access checklist](PLAN.md#10-confirm-before-remote-operations).
+
+The runner writes and verifies artifacts before storing their SQLite references. An interruption can leave an unreferenced file. Leave it outside the report. If a referenced file is missing or its digest differs, recover the original bytes from the archive and check the digest before reporting that evidence.
