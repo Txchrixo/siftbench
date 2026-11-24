@@ -1,8 +1,11 @@
+import io
 import json
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
+from http.client import parse_headers
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -69,8 +72,8 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 class GitHubClient:
-    def __init__(self, token: str, allowed_repositories: tuple[str, ...], *, opener=None):
-        if not token or not token.strip() or any(char.isspace() for char in token):
+    def __init__(self, token: str | None, allowed_repositories: tuple[str, ...], *, opener=None):
+        if token is not None and (not token or any(char.isspace() for char in token)):
             raise ValueError("Provide a GitHub token through SIFTBENCH_GITHUB_TOKEN or GH_TOKEN")
         self._token = token
         self._allowed = frozenset(allowed_repositories)
@@ -78,9 +81,11 @@ class GitHubClient:
         self._opener = opener or build_opener(_NoRedirect())
 
     def _request(self, method: str, path: str, *, query: dict | None = None, body: dict | None = None):
-        url = "https://api.github.com" + path
         if query:
-            url += "?" + urlencode(query)
+            path += "?" + urlencode(query)
+        if self._token is None:
+            return self._request_cli(method, path, body)
+        url = "https://api.github.com" + path
         request = Request(url, data=canonical_json(body) if body is not None else None, method=method, headers={
             "Authorization": f"Bearer {self._token}", "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json",
@@ -99,6 +104,34 @@ class GitHubClient:
                 error.close()
         except (URLError, TimeoutError, OSError, ValueError) as error:
             raise RemoteError("GitHub request failed or response was invalid") from error
+
+    def _request_cli(self, method: str, path: str, body: dict | None):
+        # Keep GitHub CLI's credentials and certificate verification in its own process.
+        command = ["gh", "api", "--hostname", "github.com", "--method", method, "--include",
+                   "--header", "Accept: application/vnd.github+json",
+                   "--header", "X-GitHub-Api-Version: 2022-11-28", path.lstrip("/")]
+        if body is not None:
+            command.extend(("--input", "-"))
+        try:
+            result = subprocess.run(command, input=canonical_json(body) if body is not None else b"",
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20, check=False)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise RemoteError("GitHub CLI unavailable or request timed out") from error
+        parts = re.split(rb"\r?\n\r?\n", result.stdout, maxsplit=1)
+        status_line, _, header_bytes = parts[0].partition(b"\n")
+        status = re.match(rb"HTTP/\S+\s+(\d{3})\b", status_line)
+        if len(parts) != 2 or status is None:
+            raise RemoteError("GitHub CLI returned no HTTP response. Check gh auth status.")
+        headers = parse_headers(io.BytesIO(header_bytes + b"\n\n"))
+        code = int(status[1])
+        if not 200 <= code < 300:
+            self._raise_http(HTTPError(None, code, "GitHub CLI request failed", headers, None))
+        if result.returncode or len(parts[1]) > 8_388_608:
+            raise RemoteError("GitHub CLI request failed or response exceeded the capture size limit")
+        try:
+            return json.loads(parts[1]), headers
+        except ValueError as error:
+            raise RemoteError("GitHub CLI returned invalid JSON") from error
 
     @staticmethod
     def _raise_http(error: HTTPError) -> None:

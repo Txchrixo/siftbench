@@ -1,7 +1,6 @@
 import argparse
 import os
 import sqlite3
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,15 +19,7 @@ def _print_json(value: object) -> None:
 
 
 def _live_client(manifest) -> GitHubClient:
-    token = os.environ.get("SIFTBENCH_GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
-    if not token:
-        try:
-            token = subprocess.run(
-                ["gh", "auth", "token", "--hostname", "github.com"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True, timeout=8,
-            ).stdout.strip()
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ValueError("Authenticate GitHub CLI or set SIFTBENCH_GITHUB_TOKEN in this environment") from error
+    token = os.environ.get("SIFTBENCH_GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     return GitHubClient(token, manifest.allowed_repositories)
 
 

@@ -1,5 +1,6 @@
 import io
 import json
+from subprocess import CompletedProcess
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
@@ -94,3 +95,26 @@ def test_live_preflight_only_reads_and_rejects_a_changed_base(manifest_data):
     fake.base = "c" * 40
     with pytest.raises(InvalidInput, match="pinned SHA"):
         client.check_input(manifest.pairs()[0])
+
+
+def test_github_cli_transport_preserves_request_and_rate_limit(monkeypatch):
+    outputs = iter([
+        (0, b'HTTP/2.0 201 Created\r\nContent-Type: application/json\r\n\r\n{"number":4}'),
+        (1, b'HTTP/2.0 429 Too Many Requests\nRetry-After: 17\n\n{}'),
+    ])
+
+    def run(command, *, input, **kwargs):
+        assert command[:5] == ["gh", "api", "--hostname", "github.com", "--method"]
+        assert "repos/team/one/pulls" in command
+        if command[5] == "POST":
+            assert command[-2:] == ["--input", "-"]
+            assert json.loads(input) == {"title": "Review"}
+        code, stdout = next(outputs)
+        return CompletedProcess(command, code, stdout, b"")
+
+    monkeypatch.setattr("reviewbench.github.subprocess.run", run)
+    client = GitHubClient(None, ("team/one",))
+    assert client._request("POST", "/repos/team/one/pulls", body={"title": "Review"})[0] == {"number": 4}
+    with pytest.raises(RateLimited) as limited:
+        client._request("GET", "/repos/team/one/pulls")
+    assert limited.value.retry_after == 17
