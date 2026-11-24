@@ -39,7 +39,7 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     first = tmp_path / "first"
     assert main(["--state-dir", str(state), "report", "--run-id", "pilot", "--out", str(first)]) == 0
     html = (first / "report.html").read_text(encoding="utf-8")
-    assert "Fixture run" in html and "&lt;script&gt;" in html and "<script>" not in html
+    assert "Fixture run" in html and "&lt;script&gt;" in html and html.count("<script>") == 1
     assert "#discussion_r1" in html and "Expected ID 42" in html
     assert json.loads((first / "results.json").read_bytes()) == bundle
     replay = tmp_path / "replay"
