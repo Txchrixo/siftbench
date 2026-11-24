@@ -71,3 +71,26 @@ def test_completion_requires_correct_publisher_and_head(manifest_data):
     assert finished.state == "completed" and finished.claims == ()
     review["commit_id"] = pr.base_sha
     assert adapter.observe(pr, 100, [review], [], [], [], captured_at=110).state == "pending"
+
+
+def test_live_preflight_only_reads_and_rejects_a_changed_base(manifest_data):
+    class GitHubStub:
+        base = "a" * 40
+
+        def open(self, request, *, timeout):
+            assert request.get_method() == "GET"
+            path = urlsplit(request.full_url).path
+            if path == "/repos/team/one":
+                return Response({"full_name": "team/one", "private": True})
+            if path == "/repos/team/one/git/ref/heads/main":
+                return Response({"object": {"sha": self.base}})
+            assert path == f"/repos/team/one/git/commits/{'b' * 40}"
+            return Response({"sha": "b" * 40})
+
+    manifest = ManifestLoader.parse(manifest_data)
+    fake = GitHubStub()
+    client = GitHubClient("temporary-test", manifest.allowed_repositories, opener=fake)
+    assert client.check_input(manifest.pairs()[0]) == "/repos/team/one"
+    fake.base = "c" * 40
+    with pytest.raises(InvalidInput, match="pinned SHA"):
+        client.check_input(manifest.pairs()[0])

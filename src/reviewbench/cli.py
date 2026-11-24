@@ -1,6 +1,7 @@
 import argparse
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,6 +21,14 @@ def _print_json(value: object) -> None:
 
 def _live_client(manifest) -> GitHubClient:
     token = os.environ.get("SIFTBENCH_GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
+    if not token:
+        try:
+            token = subprocess.run(
+                ["gh", "auth", "token", "--hostname", "github.com"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True, timeout=8,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ValueError("Authenticate GitHub CLI or set SIFTBENCH_GITHUB_TOKEN in this environment") from error
     return GitHubClient(token, manifest.allowed_repositories)
 
 
@@ -62,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("doctor", "plan"):
         command = commands.add_parser(name)
         command.add_argument("--manifest", type=Path, required=True)
+        if name == "doctor":
+            command.add_argument("--github", action="store_true", help="Check authorized private repositories and pinned commits")
     run = commands.add_parser("run")
     run.add_argument("--manifest", type=Path, required=True)
     run.add_argument("--run-id")
@@ -102,8 +113,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             manifest = ManifestLoader.load(args.manifest)
+            if args.github:
+                client = _live_client(manifest)
+                checked = set()
+                for pair in manifest.pairs():
+                    key = pair.target.repository, pair.variant.input_digest
+                    if key not in checked:
+                        client.check_input(pair)
+                        checked.add(key)
             _print_json({"python": sys.version.split()[0], "sqlite": sqlite3.sqlite_version,
-                         "manifest_digest": manifest.manifest_digest, "pairs": len(manifest.pairs())})
+                         "manifest_digest": manifest.manifest_digest, "pairs": len(manifest.pairs()),
+                         "github_checked": args.github})
         elif args.command == "plan":
             manifest = ManifestLoader.load(args.manifest)
             _print_json({"run_id": manifest.run_id, "manifest_digest": manifest.manifest_digest, "pairs": [

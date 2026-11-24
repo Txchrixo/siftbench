@@ -15,7 +15,6 @@ class StoreError(ValueError):
 
 
 _SCHEMA = """
-BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS campaign (
     run_id TEXT PRIMARY KEY, manifest_digest TEXT NOT NULL,
     rubric_digest TEXT NOT NULL, manifest_json TEXT NOT NULL, execution_mode TEXT
@@ -77,20 +76,27 @@ CREATE TABLE IF NOT EXISTS verdict_evidence (
     verdict_id TEXT NOT NULL REFERENCES verdict, artifact_id TEXT NOT NULL REFERENCES artifact,
     PRIMARY KEY (verdict_id, artifact_id)
 );
-PRAGMA user_version = 2;
-COMMIT;
+CREATE TABLE IF NOT EXISTS campaign_throttle (
+    run_id TEXT PRIMARY KEY REFERENCES campaign, retry_at REAL NOT NULL
+);
+PRAGMA user_version = 3;
 """
 
 _MIGRATE_1_TO_2 = """
-BEGIN IMMEDIATE;
 ALTER TABLE campaign ADD COLUMN execution_mode TEXT;
 ALTER TABLE attempt ADD COLUMN manual_trigger_at REAL;
 UPDATE campaign SET execution_mode = 'fixture' WHERE EXISTS (
     SELECT 1 FROM review_capture c JOIN attempt a USING (attempt_id)
     JOIN experiment_pair p USING (pair_id) WHERE p.run_id = campaign.run_id AND c.completion_signal = 'fixture.completed'
 );
-PRAGMA user_version = 2;
-COMMIT;
+"""
+
+_MIGRATE_2_TO_3 = """
+CREATE TABLE campaign_throttle (run_id TEXT PRIMARY KEY REFERENCES campaign, retry_at REAL NOT NULL);
+INSERT INTO campaign_throttle
+    SELECT p.run_id, max(a.next_poll_at) FROM attempt a JOIN experiment_pair p USING (pair_id)
+    WHERE a.reason = 'GitHub API rate limit' AND a.next_poll_at IS NOT NULL GROUP BY p.run_id;
+PRAGMA user_version = 3;
 """
 
 
@@ -145,12 +151,16 @@ class RunStore:
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
-                raise StoreError(f"Unsupported database schema version: {version}")
-            if version == 0:
-                connection.executescript(_SCHEMA)
-            elif version == 1:
-                connection.executescript(_MIGRATE_1_TO_2)
+            if version != 3:
+                with connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                    migrations = {0: _SCHEMA, 1: _MIGRATE_1_TO_2 + _MIGRATE_2_TO_3, 2: _MIGRATE_2_TO_3, 3: ""}
+                    if version not in migrations:
+                        raise StoreError(f"Unsupported database schema version: {version}")
+                    for statement in migrations[version].split(";"):
+                        if statement.strip():
+                            connection.execute(statement)
             with connection:
                 yield connection
         finally:
@@ -282,6 +292,18 @@ class RunStore:
         with self.connect() as db:
             db.execute("UPDATE attempt SET next_poll_at = ?, reason = ? WHERE attempt_id = ?",
                        (next_poll, reason, attempt_id))
+
+    def rate_limit_until(self, run_id: str) -> float:
+        with self.connect() as db:
+            row = db.execute("SELECT retry_at FROM campaign_throttle WHERE run_id = ?", (run_id,)).fetchone()
+        return row["retry_at"] if row else 0
+
+    def limit_campaign(self, run_id: str, attempt_id: str, retry_at: float) -> None:
+        with self.connect() as db:
+            db.execute("INSERT INTO campaign_throttle VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE "
+                       "SET retry_at = max(campaign_throttle.retry_at, excluded.retry_at)", (run_id, retry_at))
+            db.execute("UPDATE attempt SET next_poll_at = ?, reason = 'GitHub API rate limit' WHERE attempt_id = ?",
+                       (retry_at, attempt_id))
 
     def confirm_trigger(self, attempt_id: str, observed_at: float, comment_at: float, url: str) -> None:
         with self.connect() as db:

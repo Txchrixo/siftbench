@@ -57,7 +57,7 @@ def test_rate_limit_and_head_mismatch_do_not_score(tmp_path, manifest_data):
         def find_pull(self, pair, head_ref):
             if pair.target.provider_id == "one":
                 self.attempts += 1
-                raise RateLimited(70)
+                raise RateLimited(55)
             return super().find_pull(pair, head_ref)
 
         def create_pull(self, pair, head_ref):
@@ -68,11 +68,21 @@ def test_rate_limit_and_head_mismatch_do_not_score(tmp_path, manifest_data):
     runner = CampaignRunner(RunStore(tmp_path), transport, clock=lambda: current[0])
     manifest = ManifestLoader.parse(manifest_data)
     first = runner.step(manifest)
-    assert [pair["status"] for pair in first] == ["preparing", "invalid_input"]
+    assert [pair["status"] for pair in first] == ["preparing", "planned"]
+    assert not transport.pulls
     current[0] = 150
     runner.step(manifest)
     assert transport.attempts == 1
     current[0] = 161
     final = runner.step(manifest)
-    assert [pair["status"] for pair in final] == ["timed_out", "invalid_input"]
+    assert [pair["status"] for pair in final] == ["timed_out", "timed_out"]
     assert transport.attempts == 1
+
+
+def test_changed_head_is_excluded_from_capture(tmp_path, manifest_data):
+    class MismatchedTransport(FixtureTransport):
+        def create_pull(self, pair, head_ref):
+            return replace(super().create_pull(pair, head_ref), head_sha="c" * 40)
+
+    result = CampaignRunner(RunStore(tmp_path), MismatchedTransport({})).step(ManifestLoader.parse(manifest_data))
+    assert {pair["status"] for pair in result} == {"invalid_input"}

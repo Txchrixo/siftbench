@@ -19,8 +19,9 @@ class CampaignRunner:
     def step(self, manifest: Manifest) -> list[dict]:
         with self.store.lock(manifest.run_id):
             self.store.register(manifest, self.execution_mode)
+            paused_until = self.store.rate_limit_until(manifest.run_id)
             for pair in manifest.pairs():
-                self._advance(manifest, pair)
+                paused_until = self._advance(manifest, pair, paused_until) or paused_until
         return self.store.statuses(manifest.run_id)
 
     def reconcile(self, manifest: Manifest, attempt_id: str) -> str:
@@ -39,7 +40,7 @@ class CampaignRunner:
             self.store.attach_pr(attempt_id, pr.number, pr.url, target, now)
             return pr.url
 
-    def _advance(self, manifest: Manifest, pair: ExperimentPair) -> None:
+    def _advance(self, manifest: Manifest, pair: ExperimentPair, paused_until: float) -> float | None:
         now = self.clock()
         attempt = self.store.attempt(pair, now, manifest.timeout_seconds)
         attempt_id = attempt["attempt_id"]
@@ -49,7 +50,7 @@ class CampaignRunner:
         if now >= attempt["deadline_at"]:
             self.store.transition(attempt_id, "timed_out", now, "Capture deadline elapsed")
             return
-        if attempt["next_poll_at"] is not None and now < attempt["next_poll_at"]:
+        if now < paused_until or (attempt["next_poll_at"] is not None and now < attempt["next_poll_at"]):
             return
 
         head_ref = f"siftbench/{attempt_id}"
@@ -77,6 +78,8 @@ class CampaignRunner:
         except InvalidInput as error:
             self.store.transition(attempt_id, "invalid_input", now, str(error))
         except RateLimited as error:
-            self.store.schedule_poll(attempt_id, self.clock() + error.retry_after, str(error))
+            retry_at = self.clock() + error.retry_after
+            self.store.limit_campaign(manifest.run_id, attempt_id, retry_at)
+            return retry_at
         except RemoteError as error:
             self.store.schedule_poll(attempt_id, self.clock() + 5, str(error))

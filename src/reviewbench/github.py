@@ -183,15 +183,22 @@ class GitHubClient:
         except (KeyError, TypeError) as error:
             raise RemoteError("Unexpected GitHub reference format") from error
 
-    def create_pull(self, pair: ExperimentPair, head_ref: str) -> PullRequest:
-        repo, case = pair.target.repository, pair.variant
-        path = self._repository(repo, refresh=True)
+    def check_input(self, pair: ExperimentPair) -> str:
+        case = pair.variant
+        path = self._repository(pair.target.repository, refresh=True)
         if self._branch_sha(path, case.base_ref) != case.base_sha:
             raise InvalidInput("Base branch no longer points at the pinned SHA")
         try:
-            self._request("GET", f"{path}/git/commits/{case.head_sha}")
+            head, _ = self._request("GET", f"{path}/git/commits/{case.head_sha}")
         except NotFound as error:
             raise InvalidInput("Pinned head is missing from the test repository. Import the pilot commit first.") from error
+        if not isinstance(head, dict) or head.get("sha") != case.head_sha:
+            raise InvalidInput("Head commit response does not match the pinned SHA")
+        return path
+
+    def create_pull(self, pair: ExperimentPair, head_ref: str) -> PullRequest:
+        repo, case = pair.target.repository, pair.variant
+        path = self.check_input(pair)
         try:
             current = self._branch_sha(path, head_ref)
         except NotFound:
