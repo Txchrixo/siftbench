@@ -1,0 +1,25 @@
+stateDiagram-v2
+    [*] --> planned
+    planned --> preparing: Inputs validated
+    planned --> invalid_input: Manifest or refs incompatible
+    preparing --> awaiting_trigger: Valid PR and manual trigger
+    preparing --> awaiting_review: Valid PR and automatic trigger expected
+    preparing --> needs_attention: Remote write ambiguous
+    preparing --> failed: Permanent preparation error
+    preparing --> invalid_input: Base or head incompatible
+    awaiting_trigger --> awaiting_review: Trigger evidence attached
+    awaiting_trigger --> needs_attention: Trigger result ambiguous
+    awaiting_trigger --> timed_out: Deadline reached
+    awaiting_review --> completed: First review frozen
+    awaiting_review --> quota: Provider quota confirmed
+    awaiting_review --> timed_out: Deadline reached without completion
+    awaiting_review --> failed: Permanent capture error
+    awaiting_review --> invalid_input: Verified SHA differs
+    needs_attention --> preparing: PR reconciled
+    needs_attention --> awaiting_review: Trigger confirmed
+    needs_attention --> failed: Attempt closed with reason
+    completed --> [*]
+    quota --> [*]
+    timed_out --> [*]
+    failed --> [*]
+    invalid_input --> [*]

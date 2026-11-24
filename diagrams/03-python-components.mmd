@@ -1,0 +1,35 @@
+flowchart TB
+    subgraph app["SiftBench · Python process (reviewbench)"]
+        cli["CLI · cli.py"]
+        manifest["ManifestLoader · manifest.py"]
+        runner["CampaignRunner · runner.py"]
+        prepare["PullRequestProvisioner · github.py"]
+        capture["ReviewCollector · capture.py"]
+        providers["ReviewerAdapter and registry · providers/"]
+        gh["GitHubClient · github.py"]
+        store["RunStore and ArtifactStore · store.py"]
+        grade["VerdictImporter and ScoreCalculator · grading.py"]
+        report["ReportBuilder · report/"]
+    end
+    github["GitHub REST API"]
+    local[("SQLite and file store")]
+    reader["report.html and results bundle"]
+
+    cli -->|Loads and validates inputs| manifest
+    cli -->|Starts or resumes| runner
+    manifest -->|Supplies pinned inputs| runner
+    runner -->|Prepares or reconciles the PR| prepare
+    runner -->|Collects the next observation| capture
+    runner -->|Records intent and state changes| store
+    prepare -->|Creates or finds the PR| gh
+    capture -->|Applies provider rules| providers
+    capture -->|Reads GitHub surfaces| gh
+    capture -->|Persists raw observations| store
+    gh -->|HTTPS and pagination| github
+    store -->|Transactions and immutable files| local
+    cli -->|Imports human decisions| grade
+    grade -->|Reads claims and stores verdicts| store
+    cli -->|Builds the publication| report
+    report -->|Reads the validated snapshot| store
+    report -->|Calculates aggregates| grade
+    report -->|Writes the output files| reader

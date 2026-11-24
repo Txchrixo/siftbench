@@ -1,0 +1,21 @@
+flowchart TB
+    input["Revision and condition · Git SHAs and input_digest"]
+    raw["Archived review · capture_id and SHA-256"]
+    claim["Claim · claim_id and GitHub URL"]
+    verdict["Human verdict · decision, rationale, and revision"]
+    score["Score · counts and shared case scope"]
+    bundle["Validated bundle · versioned JSON and evidence"]
+    report["Report · scores, cases, and links to evidence"]
+    protocol["Frozen protocol · manifest_digest and rubric_digest"]
+
+    subgraph sources["Possible evidence sources"]
+        code["Code or test"]
+        snapshot["Simulated snapshot"]
+        live["Lambda receipt and SHA"]
+    end
+
+    input --> raw --> claim --> verdict --> score --> bundle --> report
+    code --> verdict
+    snapshot --> verdict
+    live --> verdict
+    protocol -->|Defines eligibility and scoring rules| score

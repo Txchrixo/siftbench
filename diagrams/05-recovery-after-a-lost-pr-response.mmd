@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant R as CampaignRunner
+    participant S as RunStore
+    participant G as GitHub API
+
+    R->>S: Commit create_pr intent and correlation key
+    R->>G: POST /repos/{owner}/{repo}/pulls
+    Note over R,G: GitHub may create the PR before the response is lost
+    Note over R,S: The runner stops before saving the PR number
+
+    O->>R: Resume the same run_id
+    R->>S: Load the open creation intent
+    R->>G: Look up repository, base, branch, and relevant states
+    G-->>R: Remote lookup result
+
+    alt Exact PR verified
+        R->>S: Attach the PR and close the intent
+        R-->>O: Continue collecting on the existing PR
+    else Lookup unavailable or result ambiguous
+        R->>S: Mark needs_attention and retain intent
+        R-->>O: Show the required verification or attachment
+    else Absence confirmed by reconciliation policy
+        R->>S: Authorize a retry under the same correlation key
+        R->>G: Create the PR with the expected branch
+        G-->>R: Response or outcome to reconcile
+    end

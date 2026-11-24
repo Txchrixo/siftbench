@@ -1,0 +1,22 @@
+flowchart TB
+    operator["Operator"]
+    grader["Evaluator"]
+    reader["Reader"]
+    github["GitHub · REST API and Git repositories"]
+
+    subgraph bench["SiftBench"]
+        cli["Runner and grading commands · Python process"]
+        db[("Operational state · SQLite")]
+        raw[("Artifact store · SHA-256 indexed files")]
+        bundle["Results bundle · versioned JSON and shareable evidence"]
+        report["Static HTML report · reader's browser"]
+    end
+
+    operator -->|Runs plan, run, or resume| cli
+    grader -->|Exports and imports JSONL| cli
+    cli -->|Git and HTTPS| github
+    cli -->|Reads and writes execution state| db
+    cli -->|Archives responses and evidence| raw
+    cli -->|Exports a publishable snapshot| bundle
+    bundle -->|Feeds offline rendering| report
+    reader -->|Opens the file| report

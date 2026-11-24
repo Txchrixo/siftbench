@@ -1,0 +1,38 @@
+flowchart TB
+    subgraph workstation["Operator workstation · private evaluation scope"]
+        cli["SiftBench runner · Git and GitHub API"]
+        data[("SQLite, rubric, notes, and archives")]
+        publish["Validated export of shareable evidence"]
+        cli -->|Reads and writes| data
+        data -->|Selects and checks content| publish
+    end
+
+    subgraph gh["GitHub · separate repositories and installations"]
+        a["Test PR repository A · application only"]
+        b["Test PR repository B · application only"]
+        pr["Private benchmark repository · code and report link"]
+        ci["GitHub Actions · CI for the selected SHA"]
+        deploy["GitHub Actions · manual deployment from a trusted ref"]
+        pr -->|Triggers CI| ci
+        ci -->|Records the tested revision| deploy
+    end
+
+    reviewerA["Proofline installation · review scope A"]
+    reviewerB["Greptile installation · review scope B"]
+    eval["Report reader · read access to private results"]
+
+    subgraph aws["Authorized AWS account · test evidence"]
+        sts["AWS STS and IAM role · scoped OIDC trust"]
+        stack["CloudFormation and Lambda · test application"]
+        sts -->|Authorizes scoped deployment and invocation| stack
+    end
+
+    cli -->|Publishes diff and reads responses| a
+    cli -->|Publishes same diff and reads responses| b
+    reviewerA -->|Reads and reviews its PR| a
+    reviewerB -->|Reads and reviews its PR| b
+    publish -->|Shares report and selected evidence| pr
+    eval -->|Reads the PR and opens the report| pr
+    deploy -->|Authenticates using GitHub Actions OIDC| sts
+    stack -->|Returns invocation result and request ID| deploy
+    deploy -->|Provides receipt, SHA, and workflow URL| data

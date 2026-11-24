@@ -1,0 +1,89 @@
+erDiagram
+    CAMPAIGN ||--o{ CASE_VARIANT : includes
+    CAMPAIGN ||--o{ EXPERIMENT_PAIR : plans
+    CASE_VARIANT ||--o{ EXPERIMENT_PAIR : defines_input
+    EXPERIMENT_PAIR ||--o{ ATTEMPT : executes
+    ATTEMPT ||--o{ REMOTE_OPERATION : records
+    ATTEMPT ||--o| REVIEW_CAPTURE : freezes
+    REVIEW_CAPTURE ||--o{ FINDING_CLAIM : contains
+    FINDING_CLAIM ||--o{ VERDICT : receives
+    CASE_VARIANT ||--o{ EXPECTED_FINDING : defines
+    EXPECTED_FINDING o|--o{ VERDICT : matches
+    VERDICT ||--o{ VERDICT_EVIDENCE : cites
+    ARTIFACT ||--o{ VERDICT_EVIDENCE : supports
+    ARTIFACT ||--o{ REVIEW_CAPTURE : archives
+
+    CAMPAIGN {
+        string run_id PK
+        string manifest_digest
+        string rubric_digest
+    }
+    CASE_VARIANT {
+        string variant_id PK
+        string run_id FK
+        string case_id
+        string condition
+        string base_sha
+        string head_sha
+        string input_digest
+    }
+    EXPERIMENT_PAIR {
+        string pair_id PK
+        string run_id FK
+        string variant_id FK
+        string provider_id
+        int repeat_index
+    }
+    ATTEMPT {
+        string attempt_id PK
+        string pair_id FK
+        string status
+        string repository
+        int pr_number
+        string deadline_at
+    }
+    REMOTE_OPERATION {
+        string operation_id PK
+        string attempt_id FK
+        string correlation_key
+        string operation_type
+        string status
+    }
+    REVIEW_CAPTURE {
+        string capture_id PK
+        string attempt_id FK
+        string raw_artifact_id FK
+        string observed_head_sha
+        string frozen_at
+        string completion_signal
+    }
+    FINDING_CLAIM {
+        string claim_id PK
+        string capture_id FK
+        string source_object_id
+        string source_url
+        string source_locator
+    }
+    EXPECTED_FINDING {
+        string expected_id PK
+        string variant_id FK
+        string matching_criteria
+    }
+    VERDICT {
+        string verdict_id PK
+        string claim_id FK
+        string expected_id FK
+        int revision
+        string decision
+        string rationale
+    }
+    VERDICT_EVIDENCE {
+        string verdict_id PK, FK
+        string artifact_id PK, FK
+    }
+    ARTIFACT {
+        string artifact_id PK
+        string content_sha256
+        string source_type
+        string relative_path
+    }

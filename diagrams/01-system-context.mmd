@@ -1,0 +1,25 @@
+flowchart TB
+    devex["Developer Experience Engineer"]
+    staff["Staff Software Engineer"]
+    manager["Engineering Manager"]
+    system["SiftBench · runs, scores, and reports"]
+    github["GitHub · isolated review repositories and PRs"]
+    actions["GitHub Actions · CI and deployment verification"]
+    aws["AWS Lambda · test workload"]
+
+    subgraph reviewers["AI code review providers"]
+        proofline["Proofline"]
+        greptile["Greptile"]
+        coderabbit["CodeRabbit"]
+    end
+
+    devex -->|Configures and runs campaigns| system
+    staff -->|Validates findings and records evidence| system
+    manager -->|Compares results for a rollout decision| system
+    system -->|Prepares PRs and collects reviews| github
+    proofline -->|Reviews its test PRs| github
+    greptile -->|Reviews its test PRs| github
+    coderabbit -->|Reviews its test PRs| github
+    devex -->|Starts deployment verification when needed| actions
+    actions -->|Deploys and invokes the test workload| aws
+    actions -->|Supplies CI and invocation evidence| system

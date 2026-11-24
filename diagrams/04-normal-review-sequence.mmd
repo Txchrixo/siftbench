@@ -1,0 +1,41 @@
+sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant R as CampaignRunner
+    participant S as RunStore
+    participant G as GitHubClient
+    participant P as Reviewer SaaS
+    participant C as ReviewCollector
+    participant A as ReviewerAdapter
+
+    O->>R: Run with manifest and run_id
+    R->>S: Freeze the batch and create the attempt
+    R->>S: Record PR creation intent
+    R->>G: Push the authorized branch and open a PR
+    G-->>R: PR ID, URL, base, and head
+    R->>S: Attach the PR and verify the SHAs
+
+    alt Automatic triggering configured
+        G-->>P: PR opened in authorized repository
+    else Manual trigger
+        O->>G: Trigger the review for this provider
+        O->>R: Attach trigger evidence
+        R->>S: Record the verified trigger
+    end
+
+    loop Until completion or the fixed deadline
+        R->>C: Read PR observations
+        C->>G: Page through reviews, comments, and checks
+        P-->>G: Publish reviewer output
+        G-->>C: GitHub objects and metadata
+        C->>A: Interpret identity, grouping, and completion
+        A-->>C: Normalized observation and capture status
+        C->>S: Archive messages and provenance
+    end
+
+    alt Completion verified and settling window elapsed
+        R->>S: Freeze first review and mark completed
+    else Quota, failure, or deadline
+        R->>S: Save status and reason
+    end
+    R-->>O: Final status or required action
