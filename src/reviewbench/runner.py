@@ -4,22 +4,40 @@ from collections.abc import Callable
 from .capture import ReviewCollector
 from .github import InvalidInput, RateLimited, RemoteError, Transport, verify_pull
 from .manifest import ExperimentPair, Manifest
-from .store import RunStore
+from .store import RunStore, StoreError
 
 
 class CampaignRunner:
-    def __init__(self, store: RunStore, transport: Transport, clock: Callable[[], float] = time.time):
+    def __init__(self, store: RunStore, transport: Transport, clock: Callable[[], float] = time.time,
+                 execution_mode: str = "fixture"):
         self.store = store
         self.transport = transport
         self.clock = clock
+        self.execution_mode = execution_mode
         self.collector = ReviewCollector(store, transport)
 
     def step(self, manifest: Manifest) -> list[dict]:
         with self.store.lock(manifest.run_id):
-            self.store.register(manifest)
+            self.store.register(manifest, self.execution_mode)
             for pair in manifest.pairs():
                 self._advance(manifest, pair)
         return self.store.statuses(manifest.run_id)
+
+    def reconcile(self, manifest: Manifest, attempt_id: str) -> str:
+        with self.store.lock(manifest.run_id):
+            attempt = self.store.get_attempt(attempt_id)
+            pair = next((pair for pair in manifest.pairs() if pair.pair_id == attempt["pair_id"]), None)
+            now = self.clock()
+            if pair is None or attempt["status"] != "needs_attention" or now >= attempt["deadline_at"]:
+                raise StoreError("Expected an active attempt that needs reconciliation")
+            head_ref = f"siftbench/{attempt_id}"
+            pr = self.transport.find_pull(pair, head_ref)
+            if pr is None:
+                raise StoreError("No matching PR found. The prior creation remains unresolved.")
+            verify_pull(pair, pr, head_ref)
+            target = "awaiting_trigger" if pair.target.trigger == "manual" else "awaiting_review"
+            self.store.attach_pr(attempt_id, pr.number, pr.url, target, now)
+            return pr.url
 
     def _advance(self, manifest: Manifest, pair: ExperimentPair) -> None:
         now = self.clock()
@@ -55,10 +73,10 @@ class CampaignRunner:
             else:
                 return
             if state == "awaiting_review":
-                self.collector.collect(pair, attempt, pr, self.clock(), manifest.settling_seconds)
+                self.collector.collect(pair, attempt, pr, self.clock, manifest.settling_seconds)
         except InvalidInput as error:
             self.store.transition(attempt_id, "invalid_input", now, str(error))
         except RateLimited as error:
-            self.store.schedule_poll(attempt_id, now + error.retry_after, str(error))
+            self.store.schedule_poll(attempt_id, self.clock() + error.retry_after, str(error))
         except RemoteError as error:
-            self.store.schedule_poll(attempt_id, now + 5, str(error))
+            self.store.schedule_poll(attempt_id, self.clock() + 5, str(error))

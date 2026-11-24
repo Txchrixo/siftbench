@@ -40,3 +40,18 @@ Use the exported `claim_id` to write one JSON object per line in a verdict file.
 ```
 
 Import the verdict with `reviewbench grade import --run-id pagination-pilot --rubric benchmark/fixtures/pagination/expected.json --in .siftbench/verdicts.jsonl`, then generate the report again. Fixture results stay labeled in the report.
+
+## Run an authorized GitHub pilot
+
+Prepare one private test repository per provider and condition. Seed each repository with identical case commits. Its base branch must point at the pinned base SHA and the pinned head commit must be present before the runner creates an isolated attempt branch. Install each reviewer only on its designated repository. Never copy rubric or evaluation files into a test repository.
+
+Use an environment-scoped `SIFTBENCH_GITHUB_TOKEN` or `GH_TOKEN` with access to the selected test repositories. Branch and PR creation need write access to Contents and Pull requests. Enable Checks read access if using a verified completion check. Scope the token to the pilot repositories when possible.
+
+```sh
+reviewbench plan --manifest benchmark/pilot.toml
+reviewbench run --manifest benchmark/pilot.toml --execute --once
+reviewbench status --run-id pilot
+reviewbench resume --run-id pilot --execute
+```
+
+`--once` does one pass and leaves pending attempts resumable. `--poll-seconds` controls the waiting interval. An ambiguous create is never blindly repeated. Use `reviewbench reconcile --run-id pilot --attempt-id <id>` to attach an exact PR when it becomes visible. For a manual trigger, perform the provider's trigger in GitHub and use `reviewbench attach-trigger --run-id pilot --attempt-id <id> --comment-id <id>` to attach the specific operator-confirmed comment before resuming. Validate each provider's publisher and completion signal on a real pilot before scoring official cases.

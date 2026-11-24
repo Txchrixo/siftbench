@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from .github import PullRequest, Transport
 from .manifest import ExperimentPair, canonical_json
 from .store import RunStore
@@ -8,10 +10,13 @@ class ReviewCollector:
         self.store = store
         self.transport = transport
 
-    def collect(self, pair: ExperimentPair, attempt, pr: PullRequest, now: float, settling: int) -> None:
-        review = self.transport.observe(pair, pr, attempt["started_at"])
+    def collect(self, pair: ExperimentPair, attempt, pr: PullRequest, clock: Callable[[], float], settling: int) -> None:
+        review = self.transport.observe(pair, pr, attempt["manual_trigger_at"] or attempt["started_at"])
+        now = clock()
         attempt_id = attempt["attempt_id"]
-        if review.state in {"quota", "failed"}:
+        if now >= attempt["deadline_at"]:
+            self.store.transition(attempt_id, "timed_out", now, "Capture deadline elapsed")
+        elif review.state in {"quota", "failed"}:
             self.store.transition(attempt_id, review.state, now, review.signal or review.state)
         elif review.state == "completed" and review.signal:
             observed = self.store.first_completion(attempt_id, now)

@@ -18,7 +18,7 @@ _SCHEMA = """
 BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS campaign (
     run_id TEXT PRIMARY KEY, manifest_digest TEXT NOT NULL,
-    rubric_digest TEXT NOT NULL, manifest_json TEXT NOT NULL
+    rubric_digest TEXT NOT NULL, manifest_json TEXT NOT NULL, execution_mode TEXT
 );
 CREATE TABLE IF NOT EXISTS case_variant (
     variant_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES campaign,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS attempt (
     attempt_id TEXT PRIMARY KEY, pair_id TEXT NOT NULL REFERENCES experiment_pair,
     attempt_number INTEGER NOT NULL, status TEXT NOT NULL, repository TEXT NOT NULL,
     pr_number INTEGER, pr_url TEXT, started_at REAL NOT NULL, deadline_at REAL NOT NULL,
-    first_completion_at REAL, next_poll_at REAL, reason TEXT,
+    first_completion_at REAL, next_poll_at REAL, reason TEXT, manual_trigger_at REAL,
     UNIQUE (pair_id, attempt_number), UNIQUE (repository, pr_number)
 );
 CREATE TABLE IF NOT EXISTS attempt_event (
@@ -77,7 +77,19 @@ CREATE TABLE IF NOT EXISTS verdict_evidence (
     verdict_id TEXT NOT NULL REFERENCES verdict, artifact_id TEXT NOT NULL REFERENCES artifact,
     PRIMARY KEY (verdict_id, artifact_id)
 );
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
+COMMIT;
+"""
+
+_MIGRATE_1_TO_2 = """
+BEGIN IMMEDIATE;
+ALTER TABLE campaign ADD COLUMN execution_mode TEXT;
+ALTER TABLE attempt ADD COLUMN manual_trigger_at REAL;
+UPDATE campaign SET execution_mode = 'fixture' WHERE EXISTS (
+    SELECT 1 FROM review_capture c JOIN attempt a USING (attempt_id)
+    JOIN experiment_pair p USING (pair_id) WHERE p.run_id = campaign.run_id AND c.completion_signal = 'fixture.completed'
+);
+PRAGMA user_version = 2;
 COMMIT;
 """
 
@@ -133,10 +145,12 @@ class RunStore:
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise StoreError(f"Unsupported database schema version: {version}")
             if version == 0:
                 connection.executescript(_SCHEMA)
+            elif version == 1:
+                connection.executescript(_MIGRATE_1_TO_2)
             with connection:
                 yield connection
         finally:
@@ -162,16 +176,20 @@ class RunStore:
             # Closing the descriptor releases the OS lock even after process termination.
             yield
 
-    def register(self, manifest: Manifest) -> None:
+    def register(self, manifest: Manifest, execution_mode: str | None = None) -> None:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT manifest_digest FROM campaign WHERE run_id = ?", (manifest.run_id,)).fetchone()
+            row = db.execute("SELECT manifest_digest, execution_mode FROM campaign WHERE run_id = ?", (manifest.run_id,)).fetchone()
             if row:
                 if row["manifest_digest"] != manifest.manifest_digest:
                     raise StoreError("Campaign already exists with different pinned inputs")
+                if execution_mode and row["execution_mode"] not in (None, execution_mode):
+                    raise StoreError("A campaign cannot mix fixture and live execution")
+                if execution_mode and row["execution_mode"] is None:
+                    db.execute("UPDATE campaign SET execution_mode = ? WHERE run_id = ?", (execution_mode, manifest.run_id))
                 return
-            db.execute("INSERT INTO campaign VALUES (?, ?, ?, ?)",
-                       (manifest.run_id, manifest.manifest_digest, manifest.rubric_digest, manifest.json.decode()))
+            db.execute("INSERT INTO campaign VALUES (?, ?, ?, ?, ?)",
+                       (manifest.run_id, manifest.manifest_digest, manifest.rubric_digest, manifest.json.decode(), execution_mode))
             variants = set()
             for pair in manifest.pairs():
                 if pair.variant_id not in variants:
@@ -192,6 +210,12 @@ class RunStore:
         if digest(raw) != row["manifest_digest"]:
             raise StoreError("Stored manifest digest mismatch")
         return ManifestLoader.parse(json.loads(raw))
+
+    def require_live(self, run_id: str) -> None:
+        with self.connect() as db:
+            row = db.execute("SELECT execution_mode FROM campaign WHERE run_id = ?", (run_id,)).fetchone()
+        if not row or row["execution_mode"] != "github":
+            raise StoreError("This command requires a live GitHub campaign")
 
     def save_artifact(self, data: bytes, source_type: str) -> str:
         sha = self.artifacts.put(data)
@@ -258,6 +282,24 @@ class RunStore:
         with self.connect() as db:
             db.execute("UPDATE attempt SET next_poll_at = ?, reason = ? WHERE attempt_id = ?",
                        (next_poll, reason, attempt_id))
+
+    def confirm_trigger(self, attempt_id: str, observed_at: float, comment_at: float, url: str) -> None:
+        with self.connect() as db:
+            changed = db.execute("UPDATE attempt SET status = 'awaiting_review', manual_trigger_at = ?, reason = NULL "
+                                 "WHERE attempt_id = ? AND status = 'awaiting_trigger' AND deadline_at > ?",
+                                 (comment_at, attempt_id, observed_at))
+            if not changed.rowcount:
+                raise StoreError("Attempt is no longer waiting for a manual trigger")
+            db.execute("INSERT INTO remote_operation VALUES (?, ?, 'manual_trigger', ?, 'confirmed')",
+                       (digest(f"{attempt_id}:manual_trigger".encode()), attempt_id, url))
+            self._event(db, attempt_id, "awaiting_review", observed_at, "Verified manual trigger comment")
+
+    def get_attempt(self, attempt_id: str) -> sqlite3.Row:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM attempt WHERE attempt_id = ?", (attempt_id,)).fetchone()
+        if not row:
+            raise StoreError("Unknown attempt")
+        return row
 
     def freeze_capture(self, attempt_id: str, head_sha: str, signal: str, now: float, raw: bytes,
                        claims: list[tuple[str, str, str | None, str]]) -> None:
