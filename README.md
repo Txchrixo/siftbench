@@ -45,6 +45,8 @@ Import the verdict with `reviewbench grade import --run-id pagination-pilot --ru
 
 Prepare one private test repository per provider and condition. Seed each repository with identical case commits. Its base branch must point at the pinned base SHA and the pinned head commit must be present before the runner creates an isolated attempt branch. Install each reviewer only on its designated repository. Never copy rubric or evaluation files into a test repository.
 
+The independent pagination pilot uses [its own manifest](benchmark/pilot/pagination/campaign.toml). Only `README.md` and the appropriate revision of `reports.py` go into a reviewer repository. Keep the expected findings and `tests/test_live_pilot_case.py` in SiftBench. Use `pagination-live-pilot` as the run ID for this manifest.
+
 Authenticate locally with `gh auth login --hostname github.com`, or provide `SIFTBENCH_GITHUB_TOKEN` in the local environment. An existing `GH_TOKEN` is also accepted. Branch and PR creation need write access to Contents and Pull requests. Enable Checks read access if using a verified completion check. Scope the token to the pilot repositories when possible.
 
 ```sh

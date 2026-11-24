@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "case_id": "pagination",
+      "condition": "code_only",
+      "expected_id": "same-time",
+      "matching_criteria": "A timestamp-only cursor skips remaining rows with the same timestamp as the last row on the previous page."
+    }
+  ]
+}
