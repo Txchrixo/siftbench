@@ -1,5 +1,6 @@
 import io
 import json
+from dataclasses import replace
 from subprocess import CompletedProcess
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -72,6 +73,25 @@ def test_completion_requires_correct_publisher_and_head(manifest_data):
     assert finished.state == "completed" and finished.claims == ()
     review["commit_id"] = pr.base_sha
     assert adapter.observe(pr, 100, [review], [], [], [], captured_at=110).state == "pending"
+
+
+def test_summary_only_completion_requires_check_on_same_pr_and_head(manifest_data):
+    target = replace(ManifestLoader.parse(manifest_data).targets[0], completion_check="Reviewer check")
+    pr = PullRequest(40, "https://github.com/team/one/pull/40", "team/one", "main", "siftbench/attempt", "a" * 40, "b" * 40)
+    timestamp = "1970-01-01T00:01:45Z"
+    check = {"id": 12, "name": target.completion_check, "app": {"slug": target.publisher.removesuffix("[bot]")},
+             "head_sha": pr.head_sha, "pull_requests": [{"number": 39}], "status": "completed", "conclusion": "success",
+             "started_at": timestamp, "completed_at": timestamp}
+    summary = {"id": 20, "user": {"login": target.publisher}, "body": "Review complete. No findings.",
+               "html_url": pr.url + "#issuecomment-20", "created_at": timestamp}
+    unrelated_summary = {**summary, "id": 21, "user": {"login": "different[bot]"}}
+    adapter = ReviewerAdapter(target)
+    assert adapter.observe(pr, 100, [], [], [summary], [check], captured_at=110).state == "pending"
+    check["pull_requests"] = [{"number": pr.number}]
+    observations = adapter.observe(pr, 100, [], [], [summary, unrelated_summary], [check], captured_at=110)
+    assert observations.state == "completed"
+    assert observations.signal == "check:12"
+    assert observations.claims == (("issue:20", summary["html_url"], None, summary["body"]),)
 
 
 def test_live_preflight_only_reads_and_rejects_a_changed_base(manifest_data):
