@@ -50,13 +50,15 @@ The independent pagination pilot uses [its own manifest](benchmark/pilot/paginat
 Authenticate locally with `gh auth login --hostname github.com`. SiftBench uses that session through `gh api`. In CI or other environments with an explicit token, set `SIFTBENCH_GITHUB_TOKEN` or `GH_TOKEN` to use the built-in HTTPS transport. Branch and PR creation need write access to Contents and Pull requests. Enable Checks read access if using a verified completion check. Scope the token to the pilot repositories when possible.
 
 ```sh
-reviewbench doctor --manifest benchmark/pilot.toml --github
-reviewbench plan --manifest benchmark/pilot.toml
-reviewbench run --manifest benchmark/pilot.toml --execute --once
-reviewbench status --run-id pilot
-reviewbench resume --run-id pilot --execute
+reviewbench doctor --manifest benchmark/pilot/pagination/campaign.toml --github
+reviewbench plan --manifest benchmark/pilot/pagination/campaign.toml
+reviewbench run --manifest benchmark/pilot/pagination/campaign.toml --execute --once
+reviewbench status --run-id pagination-live-pilot-v2
+reviewbench resume --run-id pagination-live-pilot-v2 --execute
 ```
 
-`--once` does one pass and leaves pending attempts resumable. `--poll-seconds` controls the waiting interval. An ambiguous create is never blindly repeated. Use `reviewbench reconcile --run-id pilot --attempt-id <id>` to attach an exact PR when it becomes visible. For a manual trigger, perform the provider's trigger in GitHub and use `reviewbench attach-trigger --run-id pilot --attempt-id <id> --comment-id <id>` to attach the specific operator-confirmed comment before resuming. Validate each provider's publisher and completion signal on a real pilot before scoring official cases.
+`--once` does one pass and leaves pending attempts resumable. `--poll-seconds` controls the waiting interval. An ambiguous create is never blindly repeated. Use `reviewbench reconcile --run-id <run-id> --attempt-id <id>` to attach an exact PR when it becomes visible. For a manual trigger, perform the provider's trigger in GitHub and use `reviewbench attach-trigger --run-id <run-id> --attempt-id <id> --comment-id <id>` to attach the specific operator-confirmed comment before resuming. Validate each provider's publisher and completion signal on a real pilot before scoring official cases.
 
-The default CI workflow uses fixtures and read-only workflow permissions. The GitHub preflight is opt-in and checks privacy and pinned commits without creating branches, opening PRs, or requesting reviews.
+The default CI workflow uses fixtures and read-only workflow permissions. The optional `doctor --github` command checks privacy and pinned commits without creating branches, opening PRs, or requesting reviews.
+
+Keep the run store and raw artifacts private. The HTML and JSON exports still include original reviewer text and evidence excerpts. Read the bundle and check who can open its source links before sharing it. Once the pilot is archived, close the experimental PRs without merging and remove reviewer access when those repositories are no longer needed. Retain the original PRs when a report links to them.

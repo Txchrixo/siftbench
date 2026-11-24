@@ -1,11 +1,13 @@
 import json
 
+import pytest
+
 from reviewbench.cli import main
 from reviewbench.fixture import FixtureTransport
 from reviewbench.grading import ScoreCalculator, VerdictImporter, build_bundle, claims_for_grading
 from reviewbench.manifest import ManifestLoader, canonical_json, digest
 from reviewbench.runner import CampaignRunner
-from reviewbench.store import RunStore
+from reviewbench.store import RunStore, StoreError
 
 
 def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
@@ -41,8 +43,21 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     html = (first / "report.html").read_text(encoding="utf-8")
     assert "Fixture run" in html and "&lt;script&gt;" in html and html.count("<script>") == 1
     assert "#discussion_r1" in html and "Expected ID 42" in html
+    assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html
+    assert f'Base <code>{manifest.cases[0].base_sha}</code>' in html
     assert json.loads((first / "results.json").read_bytes()) == bundle
     replay = tmp_path / "replay"
     assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0
     for name in ("report.html", "summary.md", "results.json"):
         assert (first / name).read_bytes() == (replay / name).read_bytes()
+
+    for pair in bundle["pairs"]:
+        del pair["base_sha"], pair["head_sha"]
+    legacy = tmp_path / "legacy.json"
+    legacy.write_bytes(canonical_json(bundle))
+    assert main(["report", "--bundle", str(legacy), "--out", str(tmp_path / "legacy")]) == 0
+
+    with store.connect() as db:
+        db.execute("UPDATE review_capture SET observed_head_sha = ?", ("c" * 40,))
+    with pytest.raises(StoreError, match="does not match the pinned commit"):
+        build_bundle(store, manifest.run_id)

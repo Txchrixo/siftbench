@@ -13,6 +13,7 @@ from ..store import StoreError
 
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 _STATES = frozenset({
     "planned", "preparing", "awaiting_trigger", "awaiting_review", "completed",
     "invalid_input", "needs_attention", "timed_out", "failed", "quota",
@@ -56,6 +57,11 @@ def _validate(bundle: dict) -> None:
                 raise StoreError("Invalid or duplicate results pair")
             seen_pairs.add(key)
             seen_pair_ids.add(pair["pair_id"])
+            if any(field in pair for field in ("base_sha", "head_sha")) and (
+                not all(_COMMIT_SHA.fullmatch(pair.get(field, "")) for field in ("base_sha", "head_sha"))
+                or pair["base_sha"] == pair["head_sha"]
+            ):
+                raise StoreError("Invalid pinned commit pair")
             if not isinstance(pair["claims"], list) or not isinstance(pair["expected"], list):
                 raise StoreError("Findings and claims must be arrays")
             if pair["status"] != "completed" and pair["claims"]:
@@ -66,6 +72,7 @@ def _validate(bundle: dict) -> None:
             for claim in pair["claims"]:
                 if (not _DIGEST.fullmatch(claim["claim_id"]) or claim["claim_id"] in seen_claims
                         or not isinstance(claim["body"], str)
+                        or claim.get("source_locator") is not None and not isinstance(claim["source_locator"], str)
                         or claim["decision"] not in DECISIONS | {None}
                         or (claim["rationale"] is not None and not isinstance(claim["rationale"], str))
                         or not isinstance(claim["evidence"], list)
@@ -223,6 +230,12 @@ class ReportBuilder:
         html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" data-case="{escape(key, quote=True)}" '
                     f'data-provider="{provider}"><h3>{provider}</h3>'
                     f'<p class="subtle">{escape(_case_name(pair))} · {_label(pair["status"])}</p>')
+        pr_url = _link(pair.get("pr_url"))
+        if pr_url and not fixture:
+            html.append(f'<p><a href="{pr_url}">GitHub pull request</a></p>')
+        if "head_sha" in pair:
+            html.append(f'<p class="subtle">Base <code>{pair["base_sha"]}</code><br>'
+                        f'Pinned head <code>{pair["head_sha"]}</code></p>')
         if pair["reason"]:
             html.append(f'<p>{escape(pair["reason"])}</p>')
         if not pair["claims"]:
@@ -235,6 +248,8 @@ class ReportBuilder:
             if url:
                 title = "Fixture comment URL" if fixture else "Original GitHub comment"
                 html.append(f'<p><a href="{url}">{title}</a></p>')
+            if claim.get("source_locator"):
+                html.append(f'<p class="subtle">Location <code>{escape(claim["source_locator"])}</code></p>')
             if claim["rationale"]:
                 html.append(f'<p>{escape(claim["rationale"])}</p>')
             if claim["evidence"]:

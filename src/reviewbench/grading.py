@@ -111,8 +111,11 @@ class VerdictImporter:
 def build_bundle(store: RunStore, run_id: str) -> dict:
     manifest = store.load_manifest(run_id)
     pairs = store.statuses(run_id)
+    variants = {pair.pair_id: pair.variant for pair in manifest.pairs()}
     with store.connect() as db:
         for pair in pairs:
+            variant = variants[pair["pair_id"]]
+            pair["base_sha"], pair["head_sha"] = variant.base_sha, variant.head_sha
             pair["expected"] = [dict(row) for row in db.execute("""
                 SELECT f.expected_id, f.matching_criteria FROM expected_finding f
                 JOIN experiment_pair p USING (variant_id) WHERE p.pair_id = ? ORDER BY f.expected_id
@@ -122,6 +125,8 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
             pair["capture_signal"] = capture["completion_signal"] if capture else None
             if not capture:
                 continue
+            if capture["observed_head_sha"] != variant.head_sha:
+                raise StoreError("Review capture does not match the pinned commit")
             store.read_artifact(capture["raw_artifact_id"])
             claims = db.execute("""
                 SELECT f.*, v.verdict_id, v.decision, v.expected_id, v.rationale, v.revision
