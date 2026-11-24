@@ -2,7 +2,7 @@
   <img src="assets/brand/logo-readme.svg" alt="SiftBench" width="280">
 </p>
 
-<h1 align="center">Benchmark AI code reviewers on GitHub</h1>
+<h1 align="center">Benchmark AI code reviewers</h1>
 
 <p align="center">
   Run the same pinned changes through multiple reviewers and trace each score to the original comment and verification evidence.
@@ -24,7 +24,7 @@
 
 ---
 
-SiftBench pairs a Python runner with an interactive HTML report. Configure a campaign, resume interrupted collection, grade findings against a frozen rubric, and compare reviewers on cases both completed. Share the report with its JSON bundle so another engineer can regenerate it offline.
+SiftBench pairs a Python runner with an interactive HTML report. Configure a campaign, resume interrupted collection, grade findings against a frozen rubric, and compare reviewers on cases both completed. Live campaigns use GitHub pull requests. Local fixtures and report replay work offline.
 
 ## Quickstart
 
