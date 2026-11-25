@@ -3,8 +3,10 @@
 import re
 from html import escape
 
+from .icons import icon
 
-_METADATA = (r"<!--[ \t]*(?:/?proofline:|coderabbit[-:]|autofix_checkbox_)"
+_METADATA = (r"<!--[ \t]*(?:/?proofline:|coderabbit[-:]|autofix_checkbox_|ai-agent-prompt:|"
+             r"fingerprinting:|cr-indicator-types:|cr-comment:|This is an auto-generated comment by CodeRabbit)"
              r"(?:(?!-->)[^\r\n])*-->")
 _METADATA_RUN = re.compile(rf"(?:{_METADATA}\s*)+")
 _GREPTILE_BADGE = re.compile(
@@ -22,6 +24,21 @@ _CODERABBIT_SEVERITY = re.compile(r"\*\*\s*(Critical|Major|Minor|Trivial|High|Me
 _INLINE = re.compile(rf"(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\n()]*\)|{_METADATA})")
 _LIST_ITEM = re.compile(r"\s*([-+*]|[0-9]+\.)\s+(.+)")
 _SUMMARY = re.compile(r"<summary>(.+)</summary>")
+_REVIEW_SOURCE = re.compile(r"_Source: ([^_<>]+)_")
+_AGENT_PROMPT = re.compile(
+    r"[ \t]*<details>[ \t]*\n[ \t]*<summary>(?P<label>[^\n]+)</summary>[ \t]*\n"
+    r"[\s]*<dl>\s*<dd>\s*"
+    r"(?P<fence>`{3,})[\w+.-]*[ \t]*\n(?P<prompt>[\s\S]*?)\n"
+    r"[ \t]*(?P=fence)[ \t]*\n\s*</dd>\s*</dl>\s*</details>[ \t]*(?=\n|$)"
+)
+
+
+def _prompt_block(prompt: str) -> str:
+    return ('<details class="review-prompt"><summary>'
+            f'{icon("agent")}Prompt to fix issue</summary><div class="prompt-body">'
+            f'<pre tabindex="0" role="region" aria-label="CodeRabbit prompt"><code>{escape(prompt)}</code></pre>'
+            '<button type="button" class="prompt-copy" aria-label="Copy prompt" title="Copy prompt" hidden>'
+            f'{icon("copy")}</button></div><p class="prompt-status" role="status"></p></details>')
 
 
 def inline(text: str) -> str:
@@ -71,7 +88,7 @@ def blocks(text: str) -> str:
     fence = None
     code = []
     disclosures = 0
-    summary_line = -1
+    handled_through = -1
     lines = text.splitlines()
 
     def flush_paragraph() -> None:
@@ -86,7 +103,7 @@ def blocks(text: str) -> str:
             list_tag = ""
 
     for index, line in enumerate(lines):
-        if index == summary_line:
+        if index <= handled_through:
             continue
         stripped = line.strip()
         if fence:
@@ -105,11 +122,17 @@ def blocks(text: str) -> str:
             flush_paragraph()
             close_list()
             label = _CODERABBIT_PICTURE.sub("", summary[1]).strip()
+            if label == "Prompt to fix issue":
+                prompt = _AGENT_PROMPT.match("\n".join(lines[index:]))
+                if prompt:
+                    output.append(_prompt_block(prompt["prompt"]))
+                    handled_through = index + prompt[0].count("\n")
+                    continue
             label = "Reviewer details" if label.casefold() == "details" else label
             output.append(f'<details class="review-disclosure"><summary>{inline(label)}</summary>'
                           '<div class="disclosure-copy">')
             disclosures += 1
-            summary_line = index + 1
+            handled_through = index + 1
         elif stripped == "</details>" and disclosures:
             flush_paragraph()
             close_list()
@@ -117,6 +140,10 @@ def blocks(text: str) -> str:
             disclosures -= 1
         elif _METADATA_RUN.fullmatch(stripped) or _PROOFLINE_FOOTER.fullmatch(stripped):
             continue
+        elif source := _REVIEW_SOURCE.fullmatch(stripped):
+            flush_paragraph()
+            close_list()
+            output.append(f'<p class="review-attribution">Source · {escape(source[1])}</p>')
         elif item := _LIST_ITEM.fullmatch(line):
             flush_paragraph()
             tag = "ol" if item[1].endswith(".") else "ul"

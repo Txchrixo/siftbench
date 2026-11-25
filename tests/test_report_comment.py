@@ -35,6 +35,20 @@ def test_coderabbit_review_title_keeps_suggestion_and_hides_provider_markup():
     assert "googleapis" not in rendered and "coderabbit-global-learning" not in rendered
 
 
+def test_coderabbit_prompt_renders_copyable_inert_text_without_provider_wrappers():
+    raw = ("<!-- ai-agent-prompt:start -->\n\n<details>\n<summary>Prompt to fix issue</summary>\n"
+           "<dl>\n<dd>\n\n```\nKeep <tag> literal.\n\n  Keep indentation.\n```\n\n"
+           "</dd>\n</dl>\n</details>\n\n<!-- ai-agent-prompt:end -->\n"
+           "<!-- fingerprinting:sample -->\n<!-- cr-comment:v1:sample -->\n"
+           "_Source: Learnings_\n<!-- This is an auto-generated comment by CodeRabbit -->")
+    rendered = blocks(raw)
+    assert '<details class="review-prompt">' in rendered and 'aria-label="Copy prompt"' in rendered
+    assert "<code>Keep &lt;tag&gt; literal.\n\n  Keep indentation.</code>" in rendered
+    assert "<p class=\"review-attribution\">Source · Learnings</p>" in rendered
+    assert not any(marker in rendered for marker in ("ai-agent-prompt", "&lt;dl&gt;", "fingerprinting", "cr-comment"))
+    assert "&lt;dl&gt;" in blocks("<dl>unrelated markup</dl>")
+
+
 def test_review_summary_hides_provider_markers_and_redundant_footer():
     raw = ('<!-- proofline:review-comment -->\n**Proofline** has 1 new finding to review.\n\n'
            '[View full review in Proofline](https://proofline.sh/path)\n\n'

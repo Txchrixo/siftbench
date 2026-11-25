@@ -581,6 +581,46 @@ select:hover { border-color: var(--text-secondary); }
 .review-copy > * + *, .disclosure-copy > * + * { margin-top: .65rem; }
 .review-disclosure { border-inline-start: 2px solid var(--border); padding-inline-start: var(--space-2); }
 .disclosure-copy { padding: var(--space-2) var(--space-2) var(--space-3); }
+.review-prompt {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  background: var(--secondary);
+}
+.review-prompt > summary { padding-inline: var(--space-3); }
+.review-prompt > summary > svg { flex: 0 0 auto; color: var(--text-secondary); }
+.prompt-body { position: relative; min-width: 0; padding: 0 var(--space-2) var(--space-2); }
+.prompt-body pre {
+  margin: 0;
+  padding: .7rem 3rem .7rem .75rem;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  background: var(--background);
+  border-radius: .35rem;
+  scrollbar-color: var(--text-secondary) var(--secondary);
+  scrollbar-width: thin;
+}
+.prompt-body pre:focus-visible { outline-offset: -2px; }
+.prompt-copy {
+  position: absolute;
+  inset: var(--space-1) calc(2 * var(--space-2)) auto auto;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: .35rem;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+.prompt-copy:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.prompt-status { margin: 0; padding: 0 var(--space-3) var(--space-2); color: var(--text-secondary); font-size: .75rem; }
+.prompt-status:empty { padding: 0; }
+.review-attribution { color: var(--text-secondary); font-size: .8125rem; }
+@media (pointer: coarse) { .prompt-copy { width: var(--control-size); height: var(--control-size); } }
 .raw-comment { margin-top: var(--space-4); border-top: 1px solid var(--border); }
 .raw-comment > p { padding: var(--space-2); font-size: .8125rem; }
 .review-copy :is(ul, ol), .finding > ul { padding-inline-start: 1.2rem; }

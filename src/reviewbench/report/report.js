@@ -232,6 +232,27 @@ document.addEventListener("click", event => {
 });
 window.addEventListener("hashchange", () => showRoute());
 
+for (const button of document.querySelectorAll(".prompt-copy")) button.hidden = false;
+document.addEventListener("click", async event => {
+  const button = event.target.closest(".prompt-copy");
+  if (!button) return;
+  const block = button.closest(".review-prompt");
+  const code = block.querySelector("pre > code");
+  const status = block.querySelector(".prompt-status");
+  try {
+    await navigator.clipboard.writeText(code.textContent);
+    status.textContent = "Prompt copied.";
+  } catch {
+    code.parentElement.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    status.textContent = "Prompt selected. Use your device’s copy command.";
+  }
+});
+
 const ask = document.querySelector("#ask-benchmark");
 const dialog = document.querySelector("#benchmark-dialog");
 if (typeof dialog?.showModal === "function") {
