@@ -184,7 +184,7 @@ def extend_campaign(baseline: dict, baseline_manifest, addition: dict, addition_
 
     sources = [{"run_id": bundle["run_id"], "manifest_digest": bundle["manifest_digest"]}
                for bundle in (baseline, addition)]
-    analysis = " ".join(filter(None, (baseline.get("analysis"),
+    analysis = " ".join(filter(None, (baseline.get("analysis"), addition.get("analysis"),
         "Additional reviewers were collected in a later run on the same pinned inputs. "
         "The original campaign and the extended comparison are separate reports.")))
     return {**baseline, "run_id": run_id, "manifest_digest": digest(canonical_json(sources)),

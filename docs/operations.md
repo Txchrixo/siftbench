@@ -62,6 +62,8 @@ Audit reads GitHub without changing the campaign. Exit code `2` means at least o
 
 To add a provider without rerunning the archived reviewers, generate its result bundle separately, then run `reviewbench extend-report` with both bundles and their pinned manifests. It requires disjoint reviewers, identical inputs and the same loaded rubric. The expanded report lists both source runs and scores only completed shared case conditions. Keep the source bundles for individual GitHub audits.
 
+The [CodeRabbit official verdict file](../benchmark/official/coderabbit-verdicts.jsonl) records the AI evaluation authorized by the operator. Its five decisions were verified against the pinned application with SQLite, CSV parsing, or the specified receiver simulation. Import it with `reviewbench grade import --run-id proofline-official-v1-coderabbit --rubric benchmark/official/expected.json --in benchmark/official/coderabbit-verdicts.jsonl` when replaying the same archive. The verdicts apply to those original claim IDs. The snapshot verdict applies the same Cedar criterion as the archived evaluation and records the details omitted by the reviewer.
+
 Operational metrics display the number of observations along with p50 and p95 timing. First useful finding uses the original publication time of the first finding confirmed by the rubric. False positives per PR use fully graded samples. Severe misses require a severity-tagged rubric. Cost is optional. Supply `report --costs` with a JSON array of `attempt_id`, `currency`, `amount_minor`, and `source` records based on observed billing. Keep unmeasured values absent. View a small sample's actual counts alongside its percentages and percentiles.
 
 ## 5. Share the appropriate artifact
