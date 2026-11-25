@@ -135,10 +135,10 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
     if not any(_counts(row[index]) for row in rows for _, index in metrics):
         return ""
     ticks = "".join(f"<li>{value}%</li>" for value in (0, 25, 50, 75, 100))
-    out = ['<figure class="interval-figure" aria-labelledby="interval-title"><figcaption>'
-           f'<h3><span id="interval-title">How sure are these scores?</span>{info("interval")}</h3>'
+    out = ['<details class="additional-scores interval-details"><summary>How sure are these scores?</summary>'
+           '<figure class="interval-figure"><figcaption>'
            '<p class="subtle">The line is the likely range and the dot is the observed score. '
-           'Hover any part to see what it means. Where lines overlap, the data cannot tell the reviewers apart.</p></figcaption>'
+           f'Hover any part to see what it means. Where lines overlap, the data cannot tell the reviewers apart.{info("interval")}</p></figcaption>'
            '<div class="interval-grid"><span class="interval-corner"></span>']
     out.extend(f'<h4 class="interval-heading">{label}</h4>' for label, _ in metrics)
 
@@ -173,7 +173,7 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
         out.append('</div>')
     out.append('<span class="interval-corner"></span>'
                + "".join(f'<ol class="interval-ticks subtle" aria-hidden="true">{ticks}</ol>' for _ in metrics)
-               + '</div></figure>')
+               + '</div></figure></details>')
     return "".join(out)
 
 

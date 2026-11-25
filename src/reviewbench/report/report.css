@@ -276,6 +276,7 @@ th:first-child { position: sticky; inset-inline-start: 0; background: var(--surf
 .reading-facts b { margin-inline-end: .25rem; color: var(--text-primary); font-weight: 650; }
 .score-ratio { display: block; margin-top: var(--space-1); color: var(--text-secondary); font-size: .8125rem; }
 .additional-scores table { min-inline-size: 34rem; }
+.interval-details:not([open]) > summary { border-radius: 0; }
 .coverage-case, .coverage-title { display: block; }
 .coverage-case { font: .8125rem/1.5 Manrope, system-ui, sans-serif; color: var(--text-secondary); }
 .coverage-title + .coverage-case { margin-top: var(--space-1); }
@@ -997,9 +998,8 @@ option:not(:checked) .option-check { transform: scale(.4); }
 .range-span:hover .range-band { fill: color-mix(in srgb, var(--info) 80%, transparent); }
 .range-score:hover .range-point { fill: var(--info); }
 .range-scale:hover .range-track { fill: var(--text-muted); }
-.interval-figure { margin: 0; padding: var(--space-4) var(--panel-inset) var(--space-3); border-block-start: 1px solid var(--border); }
+.interval-figure { margin: 0; padding: var(--space-3) var(--panel-inset) var(--space-3); }
 .interval-figure figcaption { display: grid; gap: var(--space-1); margin-block-end: var(--space-3); }
-.interval-figure h3 { margin: 0; font-size: 1rem; }
 .interval-figure figcaption p { margin: 0; font-size: .8125rem; }
 .interval-grid { display: grid; grid-template-columns: minmax(7rem, 9rem) repeat(2, minmax(0, 1fr)); gap: 0 var(--space-4); align-items: center; }
 .interval-heading { margin: 0; padding-block-end: var(--space-2); color: var(--text-secondary); font-size: .8125rem; font-weight: 700; }
