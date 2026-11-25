@@ -13,6 +13,7 @@ from ..store import StoreError
 from .comment import blocks, inline, review_text
 from .context import publication_text, validate_context
 from .diff import render_diff, render_file_patch
+from .icons import icon
 from .issues import issue_rows
 
 
@@ -192,8 +193,9 @@ class ReportBuilder:
                 f"<title>{escape(title)} | SiftBench</title><style>{css}</style></head>",
                 '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
                 f'<a class="brand" href="#overview"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
-                '<nav aria-label="Report"><a href="#overview">Overview</a><a href="#coverage">Coverage</a>'
-                '<a href="#comparison">Compare</a></nav></div></header><main id="main" tabindex="-1">',
+                f'<nav aria-label="Report"><a href="#overview">{icon("overview")}Overview</a>'
+                f'<a href="#coverage">{icon("coverage")}Coverage</a>'
+                f'<a href="#comparison">{icon("compare")}Compare</a></nav></div></header><main id="main" tabindex="-1">',
                 '<section id="overview" data-report-view tabindex="-1"><div class="title"><div><h1>Campaign overview</h1>'
                 f'<p class="run-meta"><span>{scope}</span> <code>{escape(bundle["run_id"])}</code></p></div></div>']
         groups: dict[str, dict[str, dict]] = {}
@@ -295,7 +297,8 @@ class ReportBuilder:
         html.append('<section id="comparison" data-report-view tabindex="-1"><div class="view-heading"><h1>Compare findings</h1>'
                     '<p class="view-intro">Choose a case and reviewers. Select any finding to see the code, original review, and benchmark verdict.</p></div>'
                     '<div id="comparison-controls" class="filters" hidden><label>Case and condition'
-                    '<span class="select-field"><select id="compare-case">')
+                    '<span class="select-field"><select id="compare-case">'
+                    '<button type="button"><selectedcontent></selectedcontent></button>')
         for key, group in groups.items():
             case = next(iter(group.values()))
             title = case.get("case_title") or ""
@@ -303,9 +306,13 @@ class ReportBuilder:
             if title and case["repeat_index"]:
                 label += f' · Repeat {case["repeat_index"]}'
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
-                        f'{escape(label)}</option>')
+                        f'{icon("pr")}<span class="option-label">{escape(label)}</span></option>')
         html.append(_SELECT_END)
-        html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend><div class="reviewer-options">')
+        html.append('<fieldset class="reviewer-picker"><legend>Reviewers <span id="reviewer-count"></span></legend>')
+        if len(providers) > 2:
+            html.append('<div class="reviewer-actions"><button type="button" data-select-reviewers="all">Select all</button>'
+                        '<button type="button" data-select-reviewers="none">Clear selection</button></div>')
+        html.append('<div class="reviewer-options">')
         for provider in providers:
             html.append(f'<label class="reviewer-option"><input type="checkbox" name="reviewer" '
                         f'value="{escape(provider, quote=True)}" checked>{_reviewer_display(provider)}</label>')
@@ -334,11 +341,11 @@ class ReportBuilder:
         if changes is None:
             return
         html.append(f'<details class="case-files" data-context-case="{escape(key, quote=True)}">'
-                    f'<summary>Files changed <span>{len(changes)}</span></summary>')
+                    f'<summary>{icon("diff")}Files changed <span>{len(changes)}</span></summary>')
         for item in changes:
             path = item["path"]
             count = "Binary" if item["added"] is None else f'+{item["added"]} / −{item["removed"]}'
-            html.append(f'<details class="changed-file"><summary><code>{escape(path)}</code><span>{count}</span></summary>'
+            html.append(f'<details class="changed-file"><summary>{icon("file")}<code>{escape(path)}</code><span>{count}</span></summary>'
                         f'{render_file_patch(item["patch"], path)}</details>')
         if not changes:
             html.append('<p class="empty">These commits have no file changes.</p>')
@@ -353,6 +360,7 @@ class ReportBuilder:
             html.append('<p class="empty">This change has no reference or verified additional findings.</p></div>')
             return
         html.append('<p class="subtle">Reference problems come from the rubric. Additional findings share a row only when verified as the same problem.</p>'
+                    '<p class="issue-scroll-hint subtle" hidden>Scroll the table to see the other reviewers.</p>'
                     '<div class="scroll" tabindex="0" role="region" aria-label="Problem comparison"><table><thead><tr>'
                     '<th scope="col">Problem</th>')
         for provider in providers:
@@ -394,13 +402,13 @@ class ReportBuilder:
             path = urlsplit(pair["pr_url"]).path
             if re.fullmatch(r"/[^/]+/[^/]+/pull/[0-9]+", path):
                 number = path.rsplit("/", 1)[1]
-                html.append(f'<a href="{pr_url}">PR #{number} <span aria-hidden="true">↗</span></a>'
-                            f'<a href="https://github.com{escape(path, quote=True)}/files">Files changed <span aria-hidden="true">↗</span></a>')
+                html.append(f'<a href="{pr_url}">{icon("pr")}PR #{number}</a>'
+                            f'<a href="https://github.com{escape(path, quote=True)}/files">{icon("diff")}Files changed</a>')
             else:
-                html.append(f'<a href="{pr_url}">Pull request <span aria-hidden="true">↗</span></a>')
+                html.append(f'<a href="{pr_url}">{icon("pr")}Pull request</a>')
         html.append('</div>')
         if "head_sha" in pair:
-            html.append(f'<details class="revisions"><summary>Commit revisions</summary>'
+            html.append(f'<details class="revisions"><summary>{icon("commit")}Commit revisions</summary>'
                         f'<p>Base <code>{pair["base_sha"]}</code></p><p>'
                         f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
         if pair["reason"]:
@@ -438,7 +446,7 @@ class ReportBuilder:
     @staticmethod
     def _publication(html: list[str], pair: dict) -> None:
         publication = pair["publication"]
-        html.append('<details class="review-publication"><summary>Verified publication</summary>')
+        html.append(f'<details class="review-publication"><summary>{icon("publication")}Verified publication</summary>')
         if pair["status"] != "completed":
             html.append('<p class="subtle">This publication is outside the formal capture used for these scores.</p>')
         html.append('<p>No actionable findings were recorded in the publication audit.</p>')
@@ -463,7 +471,7 @@ class ReportBuilder:
         url = _link(claim["source_url"])
         if url:
             label = "Fixture comment URL" if fixture else "View original on GitHub"
-            html.append(f'<a class="source-link" href="{url}">{label} <span aria-hidden="true">↗</span></a>')
+            html.append(f'<a class="source-link" href="{url}">{icon("external")}{label}</a>')
         html.append('</header>')
         if locator or claim.get("diff_hunk"):
             source_label = "Captured GitHub diff" if claim.get("diff_hunk") else "Reported location"
@@ -477,7 +485,7 @@ class ReportBuilder:
             html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong></p>')
         if rendered := blocks(body):
             html.append(f'<blockquote class="review-copy">{rendered}</blockquote>')
-        html.append('<details class="raw-comment"><summary>Raw comment source</summary>'
+        html.append(f'<details class="raw-comment"><summary>{icon("source")}Raw comment source</summary>'
                     '<p class="subtle">Unformatted text captured with the review.</p>'
                     f'<pre>{escape(claim["body"])}</pre></details></div>')
         html.append('<div class="evaluation"><h4>Benchmark verdict</h4>'
@@ -485,9 +493,9 @@ class ReportBuilder:
         if claim["rationale"]:
             html.append(f'<p class="rationale">{escape(claim["rationale"])}</p>')
         if claim["evidence"]:
-            html.append('<div class="verification"><h5>Verification evidence</h5>')
+            html.append(f'<div class="verification"><h5>{icon("evidence")}Verification evidence</h5>')
             for piece in claim["evidence"]:
                 html.append(f'<div class="evidence"><strong>{_label(piece["type"])}</strong>'
                             f'<p>{escape(piece["text"])}</p></div>')
             html.append('</div>')
-        html.append('</div></div><div class="inspector-nav"><a href="#comparison">Back to findings</a></div></article>')
+        html.append(f'</div></div><div class="inspector-nav"><a href="#comparison">{icon("back")}Back to findings</a></div></article>')
