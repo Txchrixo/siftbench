@@ -224,7 +224,7 @@ class ReportBuilder:
             html.append(f'<p class="analysis-note"><strong>Analysis note</strong> {escape(bundle["analysis"])}</p>')
         self._scores(html, metrics["shared"], rows, case_titles)
         html.append('</section>')
-        self._coverage(html, groups, providers)
+        self._coverage(html, groups, providers, set(metrics["shared"]), fixture=bundle["fixture"])
         self._comparison(html, groups, providers, bundle)
         html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
                     f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
@@ -235,15 +235,30 @@ class ReportBuilder:
         (output / "OFL-Manrope.txt").write_bytes(root.joinpath("OFL-Manrope.txt").read_bytes())
 
     @staticmethod
-    def _coverage(html: list[str], groups: dict, providers: list[str]) -> None:
+    def _coverage(html: list[str], groups: dict, providers: list[str], shared: set[tuple[str, str]], *, fixture: bool) -> None:
         html.append('<section id="coverage" data-report-view tabindex="-1"><div class="view-heading"><h1>Review coverage</h1>'
-                    '<p class="view-intro">Each row is one case and condition. Select a reviewer status to open that review.</p></div>')
+                    '<p class="view-intro">Open a reviewer’s status to inspect the attempt, or follow the GitHub links to the original evidence.</p></div>')
         if not groups:
             html.append("<p>No cases to compare.</p></section>")
             return
-        html.append('<div class="scroll" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
+        pairs = [pair for group in groups.values() for pair in group.values()]
+        completed = sum(pair["status"] == "completed" for pair in pairs)
+        publications = sum(bool(pair.get("publication")) for pair in pairs)
+        html.append('<dl class="run-stats coverage-stats" aria-label="Coverage totals">'
+                    f'<div><dt>Completed attempts</dt><dd>{completed} / {len(pairs)}</dd></div>'
+                    f'<div><dt>Scored conditions</dt><dd>{len(shared)} / {len(groups)}</dd></div>'
+                    f'<div><dt>Audited publications</dt><dd>{publications}</dd></div></dl>')
+        html.append('<div class="coverage-heading"><h2>Cases by reviewer</h2><p class="subtle">'
+                    'Scored rows contribute to the shared results.</p>')
+        if len(providers) > 1:
+            html.append('<p class="coverage-scroll-hint subtle">Scroll sideways to see the other reviewers.</p>')
+        html.append('</div><div class="scroll coverage-table" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
                     '<th scope="col">Case and condition</th>')
-        html.extend(f'<th scope="col">{_reviewer_display(provider)}</th>' for provider in providers)
+        for provider in providers:
+            attempts = [pair for pair in pairs if pair["provider_id"] == provider]
+            done = sum(pair["status"] == "completed" for pair in attempts)
+            html.append(f'<th scope="col">{_reviewer_display(provider)}'
+                        f'<span class="coverage-case">{done}/{len(attempts)} completed</span></th>')
         html.append("</tr></thead><tbody>")
         for group in groups.values():
             first = next(iter(group.values()))
@@ -252,18 +267,46 @@ class ReportBuilder:
             html.append('<tr><th scope="row">')
             if title:
                 html.append(f'<span class="coverage-title">{escape(title)}</span>')
-            html.append(f'<span class="coverage-case">{escape(case)}</span></th>')
+            scored = (first["case_id"], first["condition"]) in shared and not first["repeat_index"]
+            scope = "Scored" if scored else "Outside score"
+            scored_class = ' is-scored' if scored else ''
+            html.append(f'<span class="coverage-case">{escape(case)}</span>'
+                        f'<span class="coverage-scope{scored_class}">{scope}</span></th>')
             for provider in providers:
                 pair = group.get(provider)
                 if pair:
-                    status = _review_status(pair)
-                    label = escape(f"{_reviewer(provider)}, {case}: {status}", quote=True)
-                    html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}" '
-                                f'aria-label="{label}">{status}</a></td>')
+                    ReportBuilder._coverage_attempt(html, pair, case, fixture=fixture)
                 else:
-                    html.append('<td>N/A</td>')
+                    html.append('<td class="subtle">No attempt</td>')
             html.append("</tr>")
         html.append("</tbody></table></div></section>")
+
+    @staticmethod
+    def _coverage_attempt(html: list[str], pair: dict, case: str, *, fixture: bool) -> None:
+        status = _review_status(pair)
+        reviewer = _reviewer(pair["provider_id"])
+        label = escape(f"{reviewer}, {case}: {status}", quote=True)
+        html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}" aria-label="{label}">'
+                    f'{status}</a>')
+        if reason := pair.get("reason"):
+            html.append(f'<p class="coverage-reason subtle">{escape(reason)}</p>')
+        elif pair["status"] == "completed" and not pair.get("publication"):
+            inline_count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
+            html.append(f'<p class="coverage-reason subtle">{inline_count} inline {"comment" if inline_count == 1 else "comments"}</p>')
+        pr_url = _link(pair.get("pr_url")) if not fixture else None
+        if pr_url:
+            number = _pull_number(pair["pr_url"])
+            pr_label = f"PR #{number}" if number else "Pull request"
+            name = escape(f"Open {reviewer} {pr_label} on GitHub", quote=True)
+            html.append(f'<div class="coverage-links"><a href="{pr_url}" aria-label="{name}">{icon("pr")}{pr_label}</a>')
+            if check := _link((pair.get("publication") or {}).get("check_url")):
+                html.append(f'<a href="{check}">{icon("external")}Publication check</a>')
+            elif number and (signal := re.fullmatch(r"review:([0-9]+)", pair.get("capture_signal") or "")):
+                review = _link(urlsplit(pair["pr_url"])._replace(fragment=f"pullrequestreview-{signal[1]}").geturl())
+                if review:
+                    html.append(f'<a href="{review}">{icon("external")}GitHub review</a>')
+            html.append('</div>')
+        html.append('</td>')
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict) -> None:
