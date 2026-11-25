@@ -196,27 +196,27 @@ class ReportBuilder:
                 f'<nav aria-label="Report"><a href="#overview">{icon("overview")}Overview</a>'
                 f'<a href="#coverage">{icon("coverage")}Coverage</a>'
                 f'<a href="#comparison">{icon("compare")}Compare</a></nav></div></header><main id="main" tabindex="-1">',
-                '<section id="overview" data-report-view tabindex="-1"><div class="title"><div><h1>Campaign overview</h1>'
-                f'<p class="run-meta"><span>{scope}</span> <code>{escape(bundle["run_id"])}</code></p></div></div>']
+                '<section id="overview" data-report-view tabindex="-1"><header class="overview-header">'
+                '<div><h1>Campaign overview</h1>'
+                f'<p class="run-meta"><span>{scope}</span><code>{escape(bundle["run_id"])}</code></p></div>'
+                f'<div class="overview-actions"><a href="#coverage">{icon("coverage")}Check coverage</a>'
+                f'<a href="#comparison">{icon("compare")}Compare findings</a></div></header>']
         groups: dict[str, dict[str, dict]] = {}
         for pair in bundle["pairs"]:
             groups.setdefault(_case_key(pair), {})[pair["provider_id"]] = pair
         providers = list(metrics["providers"])
-        html.append('<p class="view-intro">See how the reviewers performed on changes they both reviewed.</p>'
-                    if len(providers) == 2 else '<p class="view-intro">See the results on cases completed by every reviewer.</p>')
-        if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
-            html.append(f'<p class="analysis-note">{escape(bundle["analysis"])}</p>')
         completed = sum(pair["status"] == "completed" for pair in bundle["pairs"])
         html.append('<dl class="run-stats" aria-label="Campaign totals">')
-        for label, value in (("Reviews captured", f'{completed} / {len(bundle["pairs"])}'),
-                             ("Case conditions scored", len(metrics["shared"])), ("Reviewers", len(providers))):
+        for label, value in (("Completed attempts", f'{completed} / {len(bundle["pairs"])}'),
+                             ("Scored conditions", len(metrics["shared"])), ("Reviewers", len(providers))):
             html.append(f'<div><dt>{label}</dt><dd>{value}</dd></div>')
         html.append('</dl>')
-        self._scores(html, metrics["shared"], rows)
-        html.append('<div class="overview-paths"><a href="#coverage"><strong>Check coverage</strong>'
-                    '<span>See which reviews completed and where there are gaps.</span></a>'
-                    '<a href="#comparison"><strong>Compare findings</strong>'
-                    '<span>Pick a case and trace a verdict to the original comment and evidence.</span></a></div></section>')
+        case_titles = {(pair["case_id"], pair["condition"]): pair.get("case_title") for pair in bundle["pairs"]
+                       if pair["repeat_index"] == 0}
+        if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
+            html.append(f'<p class="analysis-note"><strong>Analysis note</strong> {escape(bundle["analysis"])}</p>')
+        self._scores(html, metrics["shared"], rows, case_titles)
+        html.append('</section>')
         self._coverage(html, groups, providers)
         self._comparison(html, groups, providers, bundle)
         html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
@@ -259,37 +259,46 @@ class ReportBuilder:
         html.append("</tbody></table></div></section>")
 
     @staticmethod
-    def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]]) -> None:
-        html.append('<section id="scores" tabindex="-1"><div class="section-heading"><h2>Reviewer scores</h2>'
+    def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict) -> None:
+        html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>'
                     '<p class="subtle">Scores use only the case conditions completed by every reviewer.</p></div>')
         if not rows:
-            html.append("<p>No reviewer results are available.</p></section>")
+            html.append('<p class="score-heading subtle">No reviewer results are available.</p></section></div>')
             return
-        ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4))
-        html.append('<details class="score-scope"><summary>How to read the scores</summary><dl class="metric-guide">'
-                    '<div><dt>Precision</dt><dd>How many scored findings were confirmed.</dd></div>'
-                    '<div><dt>Reference recall</dt><dd>How many expected findings the reviewer caught.</dd></div>'
-                    '<div><dt>Additional findings</dt><dd>Verified findings outside the expected set.</dd></div></dl>')
-        if shared:
-            cases = [escape(_case_display({"case_id": case, "condition": condition, "repeat_index": 0}))
-                     for case, condition in shared]
-            html.append(f'<p class="subtle"><strong>Scored case conditions.</strong> {" / ".join(cases)}</p>')
-        html.append('</details><details class="score-scope"><summary>Additional metrics</summary>')
+        ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4), primary=True)
+        html.append('<details class="additional-scores"><summary>Additional metrics</summary>')
         ReportBuilder._score_table(html, "Additional metrics", ("False positives", "Context requests", "Duplicates", "Unresolved", "Ungraded"), rows, (3, 5, 6, 7, 8))
-        html.append('</details></section>')
+        html.append('</details></section><aside class="scoring-scope" aria-labelledby="scoring-scope-title">'
+                    '<h2 id="scoring-scope-title">Scoring scope</h2>'
+                    '<details open><summary>How to read the scores</summary><dl class="metric-guide">'
+                    '<div><dt>Precision</dt><dd>Share of scored findings that were confirmed.</dd></div>'
+                    '<div><dt>Reference recall</dt><dd>Share of expected findings the reviewer caught.</dd></div>'
+                    '<div><dt>Additional findings</dt><dd>Verified findings outside the expected set.</dd></div></dl></details>'
+                    f'<details><summary>Scored case conditions <span class="scope-count">{len(shared)}</span></summary>')
+        if shared:
+            html.append('<ul class="scope-cases" role="list">')
+            for case, condition in shared:
+                title = case_titles.get((case, condition)) or (f"Case {case}" if case.isdigit() else _label(case))
+                html.append(f'<li><strong>{escape(title)}</strong><span>{escape(_label(condition))}</span></li>')
+            html.append('</ul>')
+        else:
+            html.append('<p class="scope-empty subtle">No case conditions were completed by every reviewer.</p>')
+        html.append('</details></aside></div>')
 
     @staticmethod
-    def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...]) -> None:
-        html.append(f'<div class="scroll score-table" tabindex="0" role="region" aria-label="{label}">'
+    def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...], *, primary: bool = False) -> None:
+        kind = " main-scores" if primary else ""
+        html.append(f'<div class="scroll score-table{kind}" tabindex="0" role="region" aria-label="{label}">'
                     '<table><thead><tr><th scope="col">Reviewer</th>')
         html.extend(f'<th scope="col" class="metric">{column}</th>' for column in columns)
         html.append('</tr></thead><tbody>')
         for row in rows:
-            html.append(f'<tr><th scope="row">{escape(_reviewer(row[0]))}</th>')
+            html.append(f'<tr><th scope="row">{_reviewer_display(row[0])}</th>')
             for index in indexes:
                 value, divider, percentage = row[index].partition(" (")
-                suffix = f' <span class="score-percent">({escape(percentage)}</span>' if divider else ""
-                html.append(f'<td class="metric">{escape(value)}{suffix}</td>')
+                cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>'
+                        if divider else f'<strong>{escape(value)}</strong>' if primary else escape(value))
+                html.append(f'<td class="metric">{cell}</td>')
             html.append('</tr>')
         html.append('</tbody></table></div>')
 
