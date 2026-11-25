@@ -58,9 +58,14 @@ def _label(value: str | None) -> str:
 
 
 def _review_status(pair: dict) -> str:
-    if pair.get("publication"):
-        return "Verified publication" if pair["status"] == "completed" else "Formal review missing"
+    if pair.get("publication") and pair["status"] != "completed":
+        return "Formal review missing"
     return _label(pair["status"])
+
+
+def _inline_comment_count(pair: dict) -> str:
+    count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
+    return f'{count} inline {"comment" if count == 1 else "comments"}'
 
 
 def _grading_pending(pair: dict) -> bool:
@@ -394,11 +399,10 @@ class ReportBuilder:
         label = escape(f"{reviewer}, {case}: {status}", quote=True)
         html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}" aria-label="{label}">'
                     f'{status}</a>')
-        if reason := pair.get("reason"):
+        if pair["status"] == "completed":
+            html.append(f'<p class="coverage-reason subtle">{_inline_comment_count(pair)}</p>')
+        elif reason := pair.get("reason"):
             html.append(f'<p class="coverage-reason subtle">{escape(reason)}</p>')
-        elif pair["status"] == "completed" and not pair.get("publication"):
-            inline_count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
-            html.append(f'<p class="coverage-reason subtle">{inline_count} inline {"comment" if inline_count == 1 else "comments"}</p>')
         if pair["status"] == "completed" and _grading_pending(pair):
             html.append('<span class="coverage-grading">Grading incomplete</span>')
         pr_url = _link(pair.get("pr_url")) if not fixture else None
@@ -408,7 +412,7 @@ class ReportBuilder:
             name = escape(f"Open {reviewer} {pr_label} on GitHub", quote=True)
             html.append(f'<div class="coverage-links"><a href="{pr_url}" aria-label="{name}">{icon("pr")}{pr_label}</a>')
             if check := _link((pair.get("publication") or {}).get("check_url") or pair.get("capture_check_url")):
-                html.append(f'<a href="{check}">{icon("external")}Publication check</a>')
+                html.append(f'<a href="{check}">{icon("external")}GitHub check</a>')
             elif number and (signal := re.fullmatch(r"review:([0-9]+)", pair.get("capture_signal") or "")):
                 review = _link(urlsplit(pair["pr_url"])._replace(fragment=f"pullrequestreview-{signal[1]}").geturl())
                 if review:
@@ -651,8 +655,7 @@ class ReportBuilder:
                     f'<p class="subtle">{escape(_case_display(pair))}</p></div>'
                     f'<span class="state {status}">{_review_status(pair)}</span></header><div class="review-meta">')
         if status == "completed":
-            inline_count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
-            html.append(f'<span>{inline_count} inline {"comment" if inline_count == 1 else "comments"}</span>')
+            html.append(f'<span>{_inline_comment_count(pair)}</span>')
         pr_url = _link(pair.get("pr_url"))
         if pr_url and not fixture:
             if number := _pull_number(pair["pr_url"]):
@@ -661,20 +664,17 @@ class ReportBuilder:
                             f'<a href="https://github.com{escape(path, quote=True)}/files">{icon("diff")}Files changed</a>')
             else:
                 html.append(f'<a href="{pr_url}">{icon("pr")}Pull request</a>')
-        if not fixture and (check := _link(pair.get("capture_check_url"))):
-            html.append(f'<a href="{check}">{icon("external")}Completion check</a>')
         html.append('</div>')
         if "head_sha" in pair:
             html.append(f'<details class="revisions"><summary>{icon("commit")}Commit revisions</summary>'
                         f'<p>Base <code>{pair["base_sha"]}</code></p><p>'
                         f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
-        if pair["reason"]:
+        publication = pair.get("publication")
+        if pair["reason"] and not (publication and status == "completed"):
             html.append(f'<p class="attempt-reason subtle">{escape(pair["reason"])}</p>')
-        if pair.get("publication"):
-            ReportBuilder._publication(html, pair)
-        elif not pair["claims"] and status == "completed":
-            html.append(_report_notice("publication", "No captured findings", "A completion signal was recorded with no captured reviewer comments."))
-        elif not pair["claims"] and not pair["reason"]:
+        if not pair["claims"] and status == "completed":
+            html.append(_report_notice("publication", "No captured findings", "This completed review has no actionable findings recorded."))
+        elif not publication and not pair["claims"] and not pair["reason"]:
             detail = {
                 "planned": "The review attempt has not started.",
                 "preparing": "The runner is preparing the pull request.",
@@ -718,6 +718,8 @@ class ReportBuilder:
                 html.append('</span></a></li>')
                 ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture, status)
             html.append(f'</{tag}></details>')
+        if publication or (not fixture and _link(pair.get("capture_check_url"))):
+            ReportBuilder._review_evidence(html, pair)
         if conversation := [url for raw in pair.get("conversation_links", []) if (url := _link(raw))]:
             html.append(f'<details class="review-publication"><summary>{icon("publication")}GitHub Conversation '
                         f'<span>{len(conversation)}</span></summary><p class="subtle">Additional reviewer comments outside the scored capture.</p>')
@@ -735,15 +737,20 @@ class ReportBuilder:
         html.append("</article>")
 
     @staticmethod
-    def _publication(html: list[str], pair: dict) -> None:
-        publication = pair["publication"]
-        html.append(f'<details class="review-publication"><summary>{icon("publication")}Verified publication</summary>')
-        if pair["status"] != "completed":
-            html.append('<p class="subtle">This publication is outside the formal capture used for these scores.</p>')
-        html.append('<p>No actionable findings were recorded in the publication audit.</p>')
-        if check := _link(publication["check_url"]):
-            html.append(f'<p><a href="{check}">GitHub check · {escape(publication["title"])}</a></p>')
-        for summary in publication["summaries"]:
+    def _review_evidence(html: list[str], pair: dict) -> None:
+        publication = pair.get("publication") or {}
+        html.append(f'<details class="review-publication review-evidence"><summary>{icon("publication")}Review evidence</summary>')
+        if publication:
+            provenance = ("Recovered in the separate publication audit." if pair["status"] == "completed"
+                          else "Verified in a separate audit and outside this report’s scoring scope.")
+        else:
+            provenance = "Captured during the benchmark run."
+        html.append(f'<p class="subtle">{provenance}</p>')
+        if check := _link(publication.get("check_url") or pair.get("capture_check_url")):
+            html.append(f'<p><a href="{check}">{icon("external")}Open GitHub completion check</a></p>')
+        if title := publication.get("title"):
+            html.append(f'<p class="subtle">{escape(title)}</p>')
+        for summary in publication.get("summaries", []):
             html.append(f'<div class="review-copy">{blocks(publication_text(summary["body"]))}</div>')
             if source := _link(summary["url"]):
                 html.append(f'<p><a href="{source}">Original reviewer summary on GitHub</a></p>')

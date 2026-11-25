@@ -1,6 +1,7 @@
 import pytest
 
 from reviewbench.manifest import digest
+from reviewbench.report import ReportBuilder
 from reviewbench.report.context import attach_publications, publication_text, validate_context
 from reviewbench.report.issues import issue_rows
 
@@ -17,6 +18,28 @@ def test_verified_publication_preserves_formal_capture_status():
     assert publication_text(pair["publication"]["summaries"][0]["body"]) == "Confidence 5/5\n\nSafe to merge."
     with pytest.raises(ValueError, match="pinned review attempt"):
         attach_publications({"pairs": [pair]}, [dict(entry, head="b" * 40)])
+
+
+def test_check_backed_reviews_share_card_structure_and_keep_evidence_provenance():
+    capture = {"provider_id": "coderabbit", "pair_id": "capture", "status": "completed", "case_id": "05",
+               "condition": "code_only", "repeat_index": 0, "claims": [], "expected": [], "reason": None,
+               "pr_url": "https://github.com/team/repo/pull/5", "capture_check_url": "https://github.com/team/repo/runs/1"}
+    audit = {**capture, "provider_id": "greptile", "reason": "Separate audit.",
+             "publication": {"check_url": "https://github.com/team/repo/runs/2", "title": "Review", "summaries": []}}
+
+    def card(pair):
+        html = []
+        ReportBuilder._findings(html, [], "05", pair, False)
+        return "".join(html)
+
+    live, recovered = card(capture), card(audit)
+    for rendered in (live, recovered):
+        assert '>Completed</span>' in rendered
+        assert rendered.index("No captured findings") < rendered.index("Review evidence")
+        assert "Open GitHub completion check" in rendered
+    assert "Captured during the benchmark run." in live
+    assert "Recovered in the separate publication audit." in recovered
+    assert "Formal review missing" in card({**audit, "status": "timed_out"})
 
 
 def test_only_explicitly_grouped_additional_findings_share_a_row():
