@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from ..grading import DECISIONS, EVIDENCE_TYPES, ScoreCalculator
 from ..manifest import canonical_json, digest, identifier
 from ..store import StoreError
+from .comment import blocks, inline, review_text
 
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -97,6 +98,18 @@ def _case_name(pair: dict) -> str:
     return f"{pair['case_id']} ({pair['condition']}{repeat})"
 
 
+def _case_display(pair: dict) -> str:
+    case_id = pair["case_id"]
+    name = f"Case {case_id}" if case_id.isdigit() else _label(case_id)
+    condition = _label(pair["condition"])
+    repeat = f" · Repeat {pair['repeat_index']}" if pair["repeat_index"] else ""
+    return f"{name} · {condition}{repeat}"
+
+
+def _reviewer(value: str) -> str:
+    return {"proofline": "Proofline", "greptile": "Greptile", "coderabbit": "CodeRabbit"}.get(value, value)
+
+
 def _encoded(name: str) -> str:
     return base64.b64encode(files(__package__).joinpath(name).read_bytes()).decode("ascii")
 
@@ -148,18 +161,28 @@ class ReportBuilder:
                 '<meta name="viewport" content="width=device-width, initial-scale=1">',
                 f'<meta http-equiv="Content-Security-Policy" content="{policy}">',
                 f"<title>{escape(title)} | SiftBench</title><style>{css}</style></head>",
-                '<body><header class="shell"><div class="shell-inner">',
-                f'<div class="brand"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</div>',
-                '<nav aria-label="Report"><a href="#coverage">Coverage</a> <a href="#scores">Scores</a>'
-                ' <a href="#comparison">Findings</a></nav></div></header>',
-                f'<main><div class="title"><h1>Review benchmark</h1><p class="subtle">{escape(title)}</p></div>']
+                '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
+                f'<a class="brand" href="#main"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
+                '<nav aria-label="Report"><a href="#scores">Scores</a><a href="#comparison">Findings</a>'
+                '<a href="#coverage">Coverage</a></nav></div></header>',
+                f'<main id="main" tabindex="-1"><div class="title"><div><h1>Reviewer benchmark</h1>'
+                f'<p class="run-meta">{scope} <code>{escape(bundle["run_id"])}</code></p></div>'
+                '<a class="action" href="#comparison">Compare findings <span aria-hidden="true">↓</span></a></div>']
         groups: dict[str, dict[str, dict]] = {}
         for pair in bundle["pairs"]:
             groups.setdefault(_case_key(pair), {})[pair["provider_id"]] = pair
         providers = list(metrics["providers"])
-        self._coverage(html, groups, providers)
-        self._scores(html, shared, rows)
+        if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
+            html.append(f'<p class="analysis-note">{escape(bundle["analysis"])}</p>')
+        completed = sum(pair["status"] == "completed" for pair in bundle["pairs"])
+        html.append('<dl class="run-stats" aria-label="Campaign totals">')
+        for label, value in (("Completed attempts", f'{completed} / {len(bundle["pairs"])}'),
+                             ("Shared cases and conditions", len(metrics["shared"])), ("Reviewers", len(providers))):
+            html.append(f'<div><dt>{label}</dt><dd>{value}</dd></div>')
+        html.append('</dl>')
+        self._scores(html, metrics["shared"], rows)
         self._comparison(html, groups, providers, bundle["fixture"])
+        self._coverage(html, groups, providers)
         html.append(f"</main><script>{script}</script></body></html>")
         (output / "results.json").write_bytes(canonical_json(bundle) + b"\n")
         (output / "report.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
@@ -175,21 +198,27 @@ class ReportBuilder:
             return
         html.append('<div class="scroll" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
                     '<th scope="col">Case and condition</th>')
-        html.extend(f'<th scope="col">{escape(provider)}</th>' for provider in providers)
+        html.extend(f'<th scope="col">{escape(_reviewer(provider))}</th>' for provider in providers)
         html.append("</tr></thead><tbody>")
         for group in groups.values():
-            html.append(f'<tr><th scope="row">{escape(_case_name(next(iter(group.values()))))}</th>')
+            case = _case_display(next(iter(group.values())))
+            html.append(f'<tr><th scope="row">{escape(case)}</th>')
             for provider in providers:
                 pair = group.get(provider)
-                html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}">'
-                            f'{escape(_label(pair["status"]))}</a></td>' if pair else '<td>N/A</td>')
+                if pair:
+                    status = _label(pair["status"])
+                    label = escape(f"{_reviewer(provider)}, {case}: {status}", quote=True)
+                    html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}" '
+                                f'aria-label="{label}">{status}</a></td>')
+                else:
+                    html.append('<td>N/A</td>')
             html.append("</tr>")
         html.append("</tbody></table></div></section>")
 
     @staticmethod
-    def _scores(html: list[str], shared: str, rows: list[tuple[str, ...]]) -> None:
-        html.append(f'<section id="scores"><div class="section-heading"><h2>Scores</h2>'
-                    f'<p class="subtle">Shared completed cases across all providers: {escape(shared)}.</p></div>')
+    def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]]) -> None:
+        html.append('<section id="scores"><div class="section-heading"><h2>Scores</h2>'
+                    '<p class="subtle">Scores use cases completed by every reviewer.</p></div>')
         if not rows:
             html.append("<p>No reviewer results are available.</p></section>")
             return
@@ -200,64 +229,63 @@ class ReportBuilder:
         html.extend(f'<th scope="col" class="metric">{column}</th>' for column in columns)
         html.append("</tr></thead><tbody>")
         for provider, *counts in rows:
-            html.append(f'<tr><th scope="row">{escape(provider)}</th>')
+            html.append(f'<tr><th scope="row">{escape(_reviewer(provider))}</th>')
             html.extend(f'<td class="metric">{escape(count)}</td>' for count in counts)
             html.append("</tr>")
-        html.append("</tbody></table></div></section>")
+        html.append("</tbody></table></div>")
+        if shared:
+            cases = [escape(_case_display({"case_id": case, "condition": condition, "repeat_index": 0}))
+                     for case, condition in shared]
+            html.append(f'<details class="score-scope"><summary>Cases included in the scores <span>{len(cases)}</span></summary>'
+                        f'<p class="subtle">{" / ".join(cases)}</p></details>')
+        html.append("</section>")
 
     def _comparison(self, html: list[str], groups: dict, providers: list[str], fixture: bool) -> None:
-        html.append('<section id="comparison"><div class="section-heading"><h2>Compare findings</h2></div>'
-                    '<div id="comparison-controls" class="filters" hidden><label>Case<select id="compare-case">')
-        html.extend(f'<option value="{escape(key, quote=True)}">{escape(_case_name(next(iter(group.values()))))}</option>'
+        html.append('<section id="comparison"><div class="section-heading"><h2>Compare findings</h2>'
+                    '<p class="subtle">Choose a case and reviewers, then open the evidence behind a verdict.</p></div>'
+                    '<div id="comparison-controls" class="filters" hidden><label>Case and condition<select id="compare-case">')
+        html.extend(f'<option value="{escape(key, quote=True)}">{escape(_case_display(next(iter(group.values()))))}</option>'
                     for key, group in groups.items())
         html.append("</select></label>")
         for title, field, selected in (("First reviewer", "left", 0), ("Second reviewer", "right", 1)):
             html.append(f'<label>{title}<select id="compare-{field}"><option value="">None</option>')
             for index, provider in enumerate(providers):
                 selection = " selected" if selected == index else ""
-                html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(provider)}</option>')
+                html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(_reviewer(provider))}</option>')
             html.append("</select></label>")
-        html.append('</div><div class="comparison-grid">')
+        html.append('</div><p id="comparison-status" class="visually-hidden" role="status"></p><div class="comparison-grid">')
         for key, group in groups.items():
             for pair in group.values():
                 self._findings(html, key, pair, fixture)
-        html.append('</div><p id="comparison-empty" role="status" ' + ('hidden' if groups else '') +
-                    '>No findings are available for this selection.</p></section>')
+        html.append('</div><p id="comparison-empty" class="empty" ' + ('hidden' if groups else '') +
+                    '>No reviews are available for this selection.</p></section>')
 
     @staticmethod
     def _findings(html: list[str], key: str, pair: dict, fixture: bool) -> None:
         provider = escape(pair["provider_id"])
-        html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" data-case="{escape(key, quote=True)}" '
-                    f'data-provider="{provider}"><h3>{provider}</h3>'
-                    f'<p class="subtle">{escape(_case_name(pair))} · {_label(pair["status"])}</p>')
+        status = pair["status"]
+        count = len(pair["claims"])
+        html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" tabindex="-1" data-case="{escape(key, quote=True)}" '
+                    f'data-provider="{provider}"><header class="review-head"><div><h3>{escape(_reviewer(pair["provider_id"]))}</h3>'
+                    f'<p class="subtle">{escape(_case_display(pair))}</p></div>'
+                    f'<span class="state {status}">{_label(status)}</span></header><div class="review-meta">')
+        if status == "completed":
+            html.append(f'<span>{count} captured {"comment" if count == 1 else "comments"}</span>')
         pr_url = _link(pair.get("pr_url"))
         if pr_url and not fixture:
-            html.append(f'<p><a href="{pr_url}">GitHub pull request</a></p>')
+            html.append(f'<a href="{pr_url}">Pull request <span aria-hidden="true">↗</span></a>')
+        html.append('</div>')
         if "head_sha" in pair:
-            html.append(f'<p class="subtle">Base <code>{pair["base_sha"]}</code><br>'
-                        f'Pinned head <code>{pair["head_sha"]}</code></p>')
+            html.append(f'<details class="revisions"><summary>Commit revisions</summary>'
+                        f'<p>Base <code>{pair["base_sha"]}</code></p><p>'
+                        f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
         if pair["reason"]:
-            html.append(f'<p>{escape(pair["reason"])}</p>')
+            html.append(f'<p class="empty">{escape(pair["reason"])}</p>')
         if not pair["claims"]:
-            message = "Review completed without captured findings." if pair["status"] == "completed" else "A completed review is required for scoring."
-            html.append(f"<p>{message}</p>")
+            message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
+            html.append(f'<p class="empty">{message}</p>')
         for claim in pair["claims"]:
-            html.append(f'<div class="finding" id="claim-{claim["claim_id"]}"><h4>{_label(claim["decision"])}</h4>'
-                        f'<blockquote>{escape(claim["body"])}</blockquote>')
-            url = _link(claim["source_url"])
-            if url:
-                title = "Fixture comment URL" if fixture else "Original GitHub comment"
-                html.append(f'<p><a href="{url}">{title}</a></p>')
-            if claim.get("source_locator"):
-                html.append(f'<p class="subtle">Location <code>{escape(claim["source_locator"])}</code></p>')
-            if claim["rationale"]:
-                html.append(f'<p>{escape(claim["rationale"])}</p>')
-            if claim["evidence"]:
-                html.append("<details open><summary>Evidence</summary>")
-                for piece in claim["evidence"]:
-                    html.append(f'<p><strong>{_label(piece["type"])}</strong><br>{escape(piece["text"])}</p>')
-                html.append("</details>")
-            html.append("</div>")
+            ReportBuilder._claim(html, claim, fixture)
         if pair["status"] == "completed":
             matched = {claim["expected_id"] for claim in pair["claims"] if claim["decision"] == "confirmed_expected"}
             missing = [finding for finding in pair["expected"] if finding["expected_id"] not in matched]
@@ -266,3 +294,31 @@ class ReportBuilder:
                 html.extend(f'<li>{escape(finding["matching_criteria"])}</li>' for finding in missing)
                 html.append("</ul></div>")
         html.append("</article>")
+
+    @staticmethod
+    def _claim(html: list[str], claim: dict, fixture: bool) -> None:
+        title, severity, body = review_text(claim["body"])
+        decision = claim["decision"]
+        fallback = "Review summary" if decision == "out_of_scope" else "Reviewer comment"
+        html.append(f'<div class="finding" id="claim-{claim["claim_id"]}" tabindex="-1">'
+                    f'<div class="finding-labels"><span class="verdict {decision or "ungraded"}">{_label(decision)}</span>')
+        if severity:
+            html.append(f'<span class="severity" title="Reviewer severity">{escape(severity)}</span>')
+        html.append(f'</div><h4>{inline(title) if title else fallback}</h4>')
+        if claim.get("source_locator"):
+            html.append(f'<p class="source-location"><code>{escape(claim["source_locator"])}</code></p>')
+        if body and decision != "out_of_scope":
+            html.append(f'<blockquote class="review-copy">{blocks(body)}</blockquote>')
+        if claim["rationale"]:
+            html.append(f'<div class="rationale"><h5>Verdict rationale</h5><p>{escape(claim["rationale"])}</p></div>')
+        if claim["evidence"]:
+            html.append(f'<details><summary>Verification evidence <span>{len(claim["evidence"])}</span></summary>')
+            for piece in claim["evidence"]:
+                html.append(f'<div class="evidence"><h5>{_label(piece["type"])}</h5><p>{escape(piece["text"])}</p></div>')
+            html.append("</details>")
+        html.append(f'<details><summary>Original comment text</summary><pre>{escape(claim["body"])}</pre></details>')
+        url = _link(claim["source_url"])
+        if url:
+            label = "Fixture comment URL" if fixture else "View original on GitHub"
+            html.append(f'<a class="source-link" href="{url}">{label} <span aria-hidden="true">↗</span></a>')
+        html.append("</div>")
