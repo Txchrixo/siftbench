@@ -5,7 +5,7 @@ from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
+from . import (_SELECT_CHEVRON, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
 from .latency import publication_latency
@@ -226,7 +226,7 @@ def _attempt(case: dict, stage: str, provider: str, *, fixture: bool) -> str:
     if href:
         number = _pull_number(raw_url)
         label = f"PR #{number}" if number else "Pull request"
-        accessible = escape(f'{stage.capitalize()} · {_reviewer(provider)} · {label} · {case.get("case_title") or case["case_id"]}', quote=True)
+        accessible = escape(f'{_case_title(case)} · {stage.capitalize()} · {_reviewer(provider)} · {label}', quote=True)
         source = f'<a href="{href}" aria-label="{accessible}">{label}{icon("external")}</a>'
     elif not fixture:
         source = '<span class="sample-source-note subtle">PR link not recorded</span>'
@@ -255,8 +255,7 @@ def _coverage(result: dict) -> str:
                     f'<h3>{_reviewer_display(provider)}</h3><span class="subtle">{count} status {"change" if count == 1 else "changes"}</span></div>'
                     '<ul class="sample-list">')
         for case in row["cases"]:
-            case_id = case["case_id"]
-            title = case.get("case_title") or (f"Case {case_id}" if case_id.isdigit() else _label(case_id))
+            title = _case_title(case)
             context = _label(case["condition"])
             if repeated:
                 context += f' · Repeat {case["repeat_index"] + 1}'

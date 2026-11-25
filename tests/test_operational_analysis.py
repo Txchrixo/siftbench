@@ -16,7 +16,7 @@ def _bundle(manifest, run_id="pilot"):
     pairs = []
     for item in manifest.pairs():
         variant = item.variant
-        pairs.append({"case_id": variant.case_id, "condition": variant.condition, "repeat_index": item.repeat_index,
+        pairs.append({"case_id": variant.case_id, "case_title": variant.title, "condition": variant.condition, "repeat_index": item.repeat_index,
                       "provider_id": item.target.provider_id, "pair_id": item.pair_id, "attempt_id": item.pair_id,
                       "base_sha": variant.base_sha, "head_sha": variant.head_sha, "input_digest": variant.input_digest,
                       "pr_url": f"https://github.com/{item.target.repository}/pull/{item.repeat_index + 1}",
@@ -62,6 +62,9 @@ def test_operational_metrics_distinguish_no_completions_from_partial_grading(man
     assert report.count('class="latency-point"') == 2
     assert report.count('class="latency-median"') == 1
     assert "15 s median · n=2" in report
+    title = bundle["pairs"][0]["case_title"]
+    assert f'>{title}</a><small class="subtle">one · PR #1 · Pagination · Code only</small>' in report
+    assert f'aria-label="{title} · one · PR #1 · Pagination · Code only · 15 seconds"' in report
     reviewers = campaign_metrics(bundle, reviewer_names=True)["reviewers"]
     assert [row["operations"]["metric_availability"]["false_positives_per_graded_pr"] for row in reviewers] == [
         "partially_graded", "no_completed_reviews"]

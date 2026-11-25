@@ -7,7 +7,7 @@ import re
 from statistics import median
 
 from ..analysis import _elapsed
-from . import _case_display, _link, _reviewer, _reviewer_display
+from . import _case_context, _case_title, _link, _pull_number, _reviewer, _reviewer_display
 
 
 _LEFT, _RIGHT = 10, 550
@@ -39,9 +39,8 @@ def _plot_row(samples: list[tuple[float, dict]], limit: float, ticks: list[float
     middle = x(median(seconds for seconds, _ in samples))
     marks = [f'<line class="latency-median" x1="{middle:g}" x2="{middle:g}" y1="4" y2="{height - 4}"/>']
     for seconds, pair, lane in positions:
-        case = _case_display(pair)
-        title = pair.get("case_title")
-        description = f'{_reviewer(pair["provider_id"])} · {title + " · " if title else ""}{case} · {seconds:g} seconds'
+        title, context = _source_labels(pair, fixture)
+        description = f"{title} · {context} · {seconds:g} seconds"
         source = _evidence_link(pair, fixture)
         marks.append(f'<a class="latency-point" href="{source}" aria-label="{escape(description, quote=True)}">'
                      f'<title>{escape(description)}</title>'
@@ -60,6 +59,15 @@ def _evidence_link(pair: dict, fixture: bool) -> str:
                 return f'{pr.split("#", 1)[0]}#pullrequestreview-{signal[1]}'
             return pr
     return f'#pair-{escape(pair["pair_id"], quote=True)}'
+
+
+def _source_labels(pair: dict, fixture: bool) -> tuple[str, str]:
+    title = _case_title(pair)
+    context = [_reviewer(pair["provider_id"])]
+    if not fixture and (number := _pull_number(pair.get("pr_url"))):
+        context.append(f"PR #{number}")
+    context.append(_case_context(pair, title))
+    return title, " · ".join(context)
 
 
 def publication_latency(bundle: dict) -> str:
@@ -81,7 +89,8 @@ def publication_latency(bundle: dict) -> str:
             '<h3 id="latency-title">Review publication times</h3>'
             '<p class="subtle">Each dot is an observed review. Select it to open the original evidence.</p>'
             '<p class="latency-key subtle"><span aria-hidden="true"></span>Median</p></figcaption>']
-    for provider, samples in sorted(by_provider.items()):
+    reviewers = sorted(by_provider.items())
+    for provider, samples in reviewers:
         samples.sort(key=lambda row: (row[0], row[1]["pair_id"]))
         value = median(seconds for seconds, _ in samples)
         html.append(f'<div class="latency-row"><div class="latency-reviewer">{_reviewer_display(provider)}'
@@ -92,9 +101,10 @@ def publication_latency(bundle: dict) -> str:
                  '<p class="latency-context subtle">Measured from the recorded review start to the verified publication signal.'
                  + (' The source campaigns ran separately.' if len(bundle.get("source_campaigns", [])) > 1 else '')
                  + '</p><details class="analysis-disclosure latency-data"><summary>Review times and sources</summary><ul>'))
-    for provider, samples in sorted(by_provider.items()):
+    for _, samples in reviewers:
         for seconds, pair in samples:
-            title = escape(pair.get("case_title") or _case_display(pair))
-            html.append(f'<li><a href="{_evidence_link(pair, bundle["fixture"])}">{title}</a>'
-                        f'<span class="subtle">{escape(_reviewer(provider))} · {escape(_case_display(pair))} · {seconds:g} s</span></li>')
+            title, context = _source_labels(pair, bundle["fixture"])
+            html.append(f'<li><div><a href="{_evidence_link(pair, bundle["fixture"])}">{escape(title)}</a>'
+                        f'<small class="subtle">{escape(context)}</small></div>'
+                        f'<span class="latency-duration">{seconds:g} s</span></li>')
     return "".join(html) + "</ul></details></figure>"

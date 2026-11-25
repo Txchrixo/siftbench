@@ -163,12 +163,26 @@ def _case_key(pair: dict) -> str:
     return f"{pair['case_id']}:{pair['condition']}:{pair['repeat_index']}"
 
 
-def _case_display(pair: dict) -> str:
-    case_id = pair["case_id"]
-    name = f"Case {case_id}" if case_id.isdigit() else _label(case_id)
+def _case_name(case_id: str) -> str:
+    return f"Case {case_id}" if case_id.isdigit() else _label(case_id)
+
+
+def _case_title(pair: dict) -> str:
+    return (pair.get("case_title") or "").strip() or _case_name(pair["case_id"])
+
+
+def _case_condition(pair: dict) -> str:
     condition = _label(pair["condition"])
     repeat = f" · Repeat {pair['repeat_index'] + 1}" if pair["repeat_index"] else ""
-    return f"{name} · {condition}{repeat}"
+    return f"{condition}{repeat}"
+
+
+def _case_display(pair: dict) -> str:
+    return f'{_case_name(pair["case_id"])} · {_case_condition(pair)}'
+
+
+def _case_context(pair: dict, title: str) -> str:
+    return _case_condition(pair) if title == _case_name(pair["case_id"]) else _case_display(pair)
 
 
 def _reviewer(value: str) -> str:
@@ -361,8 +375,8 @@ class ReportBuilder:
                     'Scored rows contribute to the shared results.</p>')
         if len(providers) > 1:
             html.append('<p class="coverage-scroll-hint subtle">Scroll sideways to see the other reviewers.</p>')
-        html.append('</div><div class="scroll coverage-table" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
-                    '<th scope="col">Case and condition</th>')
+        html.append('</div><div class="scroll coverage-table" tabindex="0" role="region" aria-label="Pull request coverage"><table><thead><tr>'
+                    '<th scope="col">Pull request and condition</th>')
         for provider in providers:
             attempts = [pair for pair in pairs if pair["provider_id"] == provider]
             done = sum(pair["status"] == "completed" for pair in attempts)
@@ -371,20 +385,19 @@ class ReportBuilder:
         html.append("</tr></thead><tbody>")
         for group in groups.values():
             first = next(iter(group.values()))
-            case = _case_display(first)
-            title = first.get("case_title")
+            title = _case_title(first)
+            context = _case_context(first, title)
             html.append('<tr><th scope="row">')
-            if title:
-                html.append(f'<span class="coverage-title">{escape(title)}</span>')
+            html.append(f'<span class="coverage-title">{escape(title)}</span>')
             scored = (first["case_id"], first["condition"]) in shared and not first["repeat_index"]
             scope = "Scored" if scored else "Outside score"
             scored_class = ' is-scored' if scored else ''
-            html.append(f'<span class="coverage-case">{escape(case)}</span>'
+            html.append(f'<span class="coverage-case">{escape(context)}</span>'
                         f'<span class="coverage-scope{scored_class}">{scope}</span></th>')
             for provider in providers:
                 pair = group.get(provider)
                 if pair:
-                    ReportBuilder._coverage_attempt(html, pair, case, fixture=fixture)
+                    ReportBuilder._coverage_attempt(html, pair, f"{title} · {context}", fixture=fixture)
                 else:
                     html.append('<td class="subtle">Not planned for this reviewer</td>')
             html.append("</tr>")
@@ -447,7 +460,7 @@ class ReportBuilder:
         if shared:
             html.append('<ul class="scope-cases" role="list">')
             for case, condition in shared:
-                title = case_titles.get((case, condition)) or (f"Case {case}" if case.isdigit() else _label(case))
+                title = case_titles.get((case, condition)) or _case_name(case)
                 html.append(f'<li><strong>{escape(title)}</strong><span>{escape(_label(condition))}</span></li>')
             html.append('</ul>')
         else:
@@ -478,18 +491,18 @@ class ReportBuilder:
 
     def _comparison(self, html: list[str], groups: dict, providers: list[str], bundle: dict) -> None:
         html.append('<section id="comparison" data-report-view tabindex="-1"><div class="view-heading"><h1>Compare findings</h1>'
-                    '<p class="view-intro">Choose a case and reviewers. Select any finding to see the code, original review, and benchmark verdict.</p></div>'
-                    '<div id="comparison-controls" class="filters" hidden><label>Case and condition'
+                    '<p class="view-intro">Choose a pull request and reviewers. Select any finding to see the code, original review, and benchmark verdict.</p></div>'
+                    '<div id="comparison-controls" class="filters" hidden><label>Pull request and condition'
                     '<span class="select-field"><select id="compare-case">'
                     '<button type="button"><selectedcontent></selectedcontent></button>')
         for key, group in groups.items():
             case = next(iter(group.values()))
-            title = case.get("case_title") or ""
             case_id = case["case_id"]
-            case_name = f"Case {case_id}" if case_id.isdigit() else _label(case_id)
+            case_name = _case_name(case_id)
+            title = _case_title(case)
             numbers = {provider: _pull_number(pair.get("pr_url")) for provider, pair in group.items()} if not bundle["fixture"] else {}
             known_numbers = {number for number in numbers.values() if number}
-            reference = case_name if title else ""
+            reference = case_name if title != case_name else ""
             if len(known_numbers) == 1 and all(numbers.values()):
                 reference = f'PR #{next(iter(known_numbers))}'
             elif known_numbers:
@@ -502,7 +515,7 @@ class ReportBuilder:
             metadata = " · ".join(filter(None, details))
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
                         f'<span class="option-check" aria-hidden="true">{icon("check")}</span>'
-                        f'{icon("pr")}<span class="option-label"><span class="option-title">{escape(title or case_name)}</span> '
+                        f'{icon("pr")}<span class="option-label"><span class="option-title">{escape(title)}</span> '
                         f'<small class="option-meta">{escape(metadata)}</small></span></option>')
         html.append(f'</select>{_SELECT_CHEVRON}</span></label>')
         html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend>'
@@ -561,8 +574,7 @@ class ReportBuilder:
             if case["repeat_index"]:
                 continue
             references = {item["expected_id"]: item for pair in group.values() for item in pair["expected"]}
-            case_title = (f'{case["case_title"]} · {_label(case["condition"])}'
-                          if case.get("case_title") else _case_display(case))
+            case_title = f'{_case_title(case)} · {_case_condition(case)}'
             for expected_id, finding in references.items():
                 title = _label(expected_id.replace("-", " "))
                 rows.append(f'<tr><th scope="row"><details class="reference-criterion">'
@@ -710,7 +722,7 @@ class ReportBuilder:
         status = pair["status"]
         html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" tabindex="-1" data-case="{escape(key, quote=True)}" '
                     f'data-provider="{provider}"><header class="review-head"><div><h3>{_reviewer_display(pair["provider_id"])}</h3>'
-                    f'<p class="subtle">{escape(_case_display(pair))}</p></div>'
+                    f'<p class="subtle">{escape(_case_condition(pair))}</p></div>'
                     f'<span class="state {status}">{_review_status(pair)}</span></header><div class="review-meta">')
         if status == "completed":
             html.append(f'<span>{_inline_comment_count(pair)}</span>')
@@ -823,7 +835,8 @@ class ReportBuilder:
                     f'data-pair="pair-{pair["pair_id"]}" aria-labelledby="title-{claim_id}">'
                     '<header class="inspector-head"><div>'
                     f'<p class="inspector-origin"><strong>{escape(_reviewer(pair["provider_id"]))}</strong>'
-                    f'<span>{escape(_case_display(pair))}</span></p><h3 id="title-{claim_id}">{heading}</h3></div>')
+                    f'<span>{escape(_case_title(pair))} · {escape(_case_condition(pair))}</span></p>'
+                    f'<h3 id="title-{claim_id}">{heading}</h3></div>')
         url = _link(claim["source_url"])
         if url:
             label = "Fixture comment URL" if fixture else "View original on GitHub"
