@@ -29,6 +29,16 @@ _MISSING_LABELS = {
     "Severe findings missed": "No graded high or critical references",
 }
 
+_MISSING_REASONS = {
+    "Precision": "There are no scored findings in this comparison.",
+    "Reference recall": "There are no expected findings in this comparison.",
+    "False positives": "No fully graded PRs are available in this scope.",
+    "Severe findings missed": "No high- or critical-severity reference findings on fully graded PRs.",
+    "Review completion": "No valid start-to-publication times were recorded.",
+    "First verified finding": "No valid times from review start to a confirmed finding were recorded.",
+    "Observed cost": "No billing data was recorded for these attempts.",
+}
+
 
 @dataclass(frozen=True)
 class _MetricState:
@@ -150,16 +160,11 @@ def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool
         for reviewer, detail in headers:
             html.append(f'<th scope="col">{_reviewer_display(reviewer)}<span class="coverage-case">{escape(detail)}</span></th>')
         html.extend(("</tr></thead><tbody>", *measured, "</tbody></table></div>"))
-    not_measured = [label for label in unavailable if label not in _MISSING_LABELS]
     if unavailable:
-        html.append('<div class="metric-notes">')
-        if not_measured:
-            html.append('<p class="metric-note"><strong>Not measured</strong>'
-                        f'<span>{escape(" · ".join(not_measured))}</span></p>')
+        html.append('<div class="metric-notes"><h4>Metrics without a result</h4><dl>')
         for label in unavailable:
-            if label in _MISSING_LABELS:
-                html.append(f'<p class="metric-note"><strong>{label}</strong><span>{_MISSING_LABELS[label]}</span></p>')
-        html.append("</div>")
+            html.append(f'<div class="metric-note"><dt>{label}</dt><dd>{_MISSING_REASONS[label]}</dd></div>')
+        html.append("</dl></div>")
     html.append("</div>")
     return "".join(html)
 

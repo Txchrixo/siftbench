@@ -27,9 +27,13 @@
 .metric-state strong { font-size: .875rem; }
 .metric-state-incomplete strong { color: var(--warning); }
 .metric-stage { display: block; font-weight: 650; margin-block-end: var(--space-1); }
-.metric-notes { display: grid; gap: var(--space-2); padding: var(--space-3) var(--panel-inset); border-block-start: 1px solid var(--border); }
-.metric-note { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); font-size: .8125rem; color: var(--text-secondary); }
-.metric-note strong { color: var(--text-primary); }
+.metric-notes { padding: var(--space-3) var(--panel-inset); background: var(--secondary); border-radius: inherit; }
+.analysis-table + .metric-notes { border-block-start: 1px solid var(--border); border-start-start-radius: 0; border-start-end-radius: 0; }
+.metric-notes h4 { margin-block-end: var(--space-2); color: var(--text-secondary); font-size: .8125rem; }
+.metric-notes dl { display: grid; gap: var(--space-2); font-size: .8125rem; }
+.metric-note { display: grid; grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); gap: var(--space-1) var(--space-4); }
+.metric-note dt { font-weight: 700; }
+.metric-note dd { color: var(--text-secondary); }
 .metric-scroll-hint { display: none; padding: var(--space-2) var(--panel-inset); font-size: .75rem; }
 .analysis-disclosure { margin-block: var(--space-3); background: var(--secondary); border-radius: .5rem; }
 .analysis-disclosure > summary { padding-inline: var(--panel-inset); }
@@ -99,6 +103,7 @@
 .latency-data li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-1) var(--space-2); }
 
 @media (max-width: 40rem) {
+  .metric-note { grid-template-columns: minmax(0, 1fr); }
   .latency-row { grid-template-columns: minmax(0, 1fr); }
   .latency-reviewer { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); }
   .latency-axis > span { order: 1; justify-self: end; }

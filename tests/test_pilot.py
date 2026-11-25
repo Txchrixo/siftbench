@@ -66,7 +66,9 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     html = (first / "report.html").read_text(encoding="utf-8")
     assert "Fixture run" in html and "&lt;script&gt;" in html and html.count("<script>") == 1
     operations = html.split('id="operational-metrics"', 1)[1].split("</section>", 1)[0]
-    assert operations.count("<strong>Not measured</strong>") == 1
+    assert operations.count("Metrics without a result") == 1
+    assert "<dt>Observed cost</dt><dd>No billing data was recorded for these attempts.</dd>" in operations
+    assert "<dt>Severe findings missed</dt><dd>No high- or critical-severity reference findings on fully graded PRs.</dd>" in operations
     assert "Grading incomplete" not in operations
     assert 'aria-label="Metrics by reviewer"' in operations
     assert 'class="latency-figure"' not in operations
@@ -91,6 +93,7 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     comparison = (tmp_path / "compare" / "comparison.html").read_text(encoding="utf-8")
     assert comparison.count("1 / 1 matched completions") == 2
     assert "Only status changes" in comparison
+    assert "<dt>Observed cost</dt><dd>No billing data was recorded for these attempts.</dd>" in comparison
     assert comparison.count(manifest.cases[0].title) == 2
     replay = tmp_path / "replay"
     assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0
