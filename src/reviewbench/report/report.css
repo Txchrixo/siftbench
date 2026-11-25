@@ -117,15 +117,19 @@ nav a[aria-current="location"] { background: var(--selected-surface); color: var
 .overview-actions a:hover { background: var(--secondary); border-color: var(--text-secondary); }
 .overview-actions .report-icon { color: var(--text-secondary); }
 .run-meta {
-  margin-top: var(--space-2);
-  display: flex;
-  align-items: center;
+  display: inline-flex;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  color: var(--text-secondary);
+  gap: var(--space-1) var(--space-2);
+  max-inline-size: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-radius: .375rem;
+  background: var(--selected-surface);
+  color: var(--info);
 }
-.run-meta span { font-size: .875rem; font-weight: 650; }
-.run-meta code { min-width: 0; color: var(--text-primary); font-size: clamp(.9375rem, 1.6vw, 1.0625rem); font-weight: 700; }
+.run-meta span { font-size: .8125rem; font-weight: 700; }
+.run-meta code { min-width: 0; color: var(--text-primary); font-size: .875rem; font-weight: 700; overflow-wrap: anywhere; }
 .view-intro { margin-top: var(--space-3); color: var(--text-secondary); max-width: 66ch; }
 .view-heading { margin-bottom: var(--space-6); }
 .analysis-note {
