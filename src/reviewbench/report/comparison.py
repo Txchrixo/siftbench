@@ -24,7 +24,7 @@ _METRICS = (
 
 _MISSING_LABELS = {
     "Precision": "No scored findings",
-    "Reference recall": "No reference findings to score",
+    "Reference recall": "No reference findings",
     "Severe findings missed": "No graded high or critical references",
 }
 
@@ -190,26 +190,26 @@ def operational_metrics(bundle: dict) -> str:
                     + _table("Results by repetition", ("Reviewer", "Repeat", "Completed", "Reference recall"), repeats)
                     + "</details>")
     if metrics["pairwise"]:
-        rows = []
-        for pair in metrics["pairwise"]:
-            peers = pair["reviewers"]
-            rows.append((" <span class='subtle'>/</span> ".join(_reviewer_display(peer["reviewer"]) for peer in peers),
-                         f'{pair["completed_in_both"]} / {pair["planned_in_both"]}',
-                         _peer_scores(peers, index=0), _peer_scores(peers, index=1)))
-        html.append('<details class="analysis-disclosure"><summary>Pairwise scores on matched samples</summary>'
-                    + _table("Pairwise scores", ("Reviewer pair", "Matched samples", "Precision", "Reference recall"), rows)
-                    + "</details>")
+        html.append(_pairwise_scores(metrics["pairwise"]))
     return "".join(html) + "</section>"
 
 
-def _peer_scores(peers: list[dict], *, index: int) -> str:
-    result = []
-    for peer in peers:
-        metrics = peer["metrics"]
-        value = _values(metrics, paired=True)[index]
-        label = _METRICS[index][0]
-        result.append(f'<div class="peer-score"><small>{escape(_reviewer(peer["reviewer"]))}</small>{_value(value, label)}</div>')
-    return "".join(result)
+def _pairwise_scores(pairs: list[dict]) -> str:
+    html = ['<details class="analysis-disclosure"><summary>Pairwise scores</summary>'
+            '<div class="scroll analysis-table pairwise-table" tabindex="0" role="region" aria-label="Pairwise scores">'
+            '<table><thead><tr><th scope="col">Reviewer</th><th scope="col">Precision</th>'
+            '<th scope="col">Reference recall</th></tr></thead>']
+    for pair in pairs:
+        html.append(f'<tbody><tr class="pairwise-scope"><th scope="rowgroup" colspan="3">'
+                    f'<strong>{pair["completed_in_both"]} / {pair["planned_in_both"]}</strong>'
+                    ' <span>matched samples</span></th></tr>')
+        for peer in pair["reviewers"]:
+            precision, recall, *_ = _values(peer["metrics"], paired=True)
+            html.append(f'<tr><th scope="row">{_reviewer_display(peer["reviewer"])}</th>'
+                        f'<td>{_value(precision, "Precision")}</td>'
+                        f'<td>{_value(recall, "Reference recall")}</td></tr>')
+        html.append("</tbody>")
+    return "".join(html) + "</table></div></details>"
 
 
 def _attempt(case: dict, stage: str, provider: str, *, fixture: bool) -> str:

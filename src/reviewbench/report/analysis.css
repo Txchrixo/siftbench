@@ -12,9 +12,15 @@
 .analysis-table :is(th, td) > .coverage-case { margin-block-start: var(--space-1); font-weight: 500; }
 .metric-reading { display: grid; }
 .metric-reading + .metric-reading { margin-block-start: var(--space-2); }
-.peer-score + .peer-score { margin-block-start: var(--space-2); }
-.peer-score > small, .sample-source-note { display: block; font-size: .75rem; }
-.peer-score > small { color: var(--text-secondary); }
+.sample-source-note { display: block; font-size: .75rem; }
+.pairwise-table .pairwise-scope th {
+  position: static;
+  padding-block: var(--space-2);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: .75rem;
+}
+.pairwise-scope strong { margin-inline-end: var(--space-1); color: var(--text-primary); }
 .metric-reading strong { font-size: 1rem; }
 .metric-reading small, .metric-stage, .metric-state strong { color: var(--text-secondary); }
 .metric-reading small, .metric-stage { font-size: .75rem; }
@@ -71,6 +77,7 @@
 
 @media (max-width: 40rem) {
   .metric-scroll-hint { display: block; }
+  .pairwise-table :is(th, td) { min-inline-size: 0; padding-inline: var(--space-2); overflow-wrap: anywhere; }
   .sample-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sample-title { grid-column: 1 / -1; }
   .sample-attempt { padding-inline-start: var(--space-2); border-inline-start: 1px solid var(--border); }
