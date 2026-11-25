@@ -102,9 +102,14 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
 
     for pair in bundle["pairs"]:
         del pair["base_sha"], pair["head_sha"]
+    bundle["analysis"] = "Historical timing reconstructed from <GitHub>."
     legacy = tmp_path / "legacy.json"
     legacy.write_bytes(canonical_json(bundle))
     assert main(["report", "--bundle", str(legacy), "--out", str(tmp_path / "legacy")]) == 0
+    legacy_html = (tmp_path / "legacy" / "report.html").read_text(encoding="utf-8")
+    assert "<details><summary>Campaign methodology</summary>" in legacy_html
+    assert "Historical timing reconstructed from &lt;GitHub&gt;." in legacy_html
+    assert "Analysis note" not in legacy_html
 
     with store.connect() as db:
         db.execute("UPDATE review_capture SET observed_head_sha = ?", ("c" * 40,))

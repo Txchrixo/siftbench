@@ -162,21 +162,13 @@ nav a[aria-current="location"] { color: var(--info); }
 .run-meta code { min-width: 0; color: var(--text-primary); font-size: .875rem; font-weight: 700; overflow-wrap: anywhere; }
 .view-intro { margin-top: var(--space-3); color: var(--text-secondary); max-width: 66ch; }
 .view-heading { margin-bottom: var(--space-6); }
-.analysis-note {
-  margin-top: var(--space-4);
-  color: var(--text-secondary);
-  padding: var(--space-2) var(--space-3);
-  font-size: .875rem;
-  overflow-wrap: anywhere;
-}
-.analysis-note strong { margin-inline-end: var(--space-2); color: var(--text-primary); }
 .run-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: var(--space-6);
 }
-.analysis-note, .run-stats, #scores, .scoring-scope, .claim-index a { background: var(--secondary); }
-.analysis-note, .claim-index a { border-inline-start: 2px solid var(--info); }
+.run-stats, #scores, .scoring-scope, .claim-index a { background: var(--secondary); }
+.claim-index a { border-inline-start: 2px solid var(--info); }
 #overview .run-stats, #scores, .scoring-scope { border-radius: .5rem; }
 .run-stats > div { display: grid; align-content: start; gap: var(--space-1); padding: var(--space-4) var(--panel-inset); }
 .run-stats > div + div { border-inline-start: 1px solid var(--border); }
@@ -207,6 +199,7 @@ main > [data-report-view] { margin-top: 0; }
 .scope-cases li > span { display: block; font-size: .8125rem; }
 .scope-count { padding-inline: .45em; border-radius: .25rem; background: var(--surface); }
 .scope-empty { padding: var(--space-2) var(--panel-inset) var(--space-3); }
+.scope-methodology { padding: var(--space-3) var(--panel-inset); font-size: .875rem; overflow-wrap: anywhere; white-space: pre-wrap; }
 .scroll {
   background: var(--surface);
   border-radius: .5rem;

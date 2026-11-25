@@ -288,9 +288,7 @@ class ReportBuilder:
         html.append('</dl>')
         case_titles = {(pair["case_id"], pair["condition"]): pair.get("case_title") for pair in bundle["pairs"]
                        if pair["repeat_index"] == 0}
-        if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
-            html.append(f'<p class="analysis-note"><strong>Analysis note</strong> {escape(bundle["analysis"])}</p>')
-        self._scores(html, metrics["shared"], rows, case_titles)
+        self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"))
         if operational:
             self._operations(html, bundle)
         html.append('</section>')
@@ -421,7 +419,8 @@ class ReportBuilder:
         html.append('</td>')
 
     @staticmethod
-    def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict) -> None:
+    def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict,
+                *, analysis: str | None = None) -> None:
         html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
         if shared:
             html.append('<p class="subtle">Scores use only the case conditions completed by every reviewer.</p>')
@@ -453,7 +452,11 @@ class ReportBuilder:
             html.append('</ul>')
         else:
             html.append('<p class="scope-empty subtle">No case conditions were completed by every reviewer.</p>')
-        html.append('</details></aside></div>')
+        html.append('</details>')
+        if isinstance(analysis, str) and analysis.strip():
+            html.append('<details><summary>Campaign methodology</summary>'
+                        f'<p class="scope-methodology subtle">{escape(analysis.strip())}</p></details>')
+        html.append('</aside></div>')
 
     @staticmethod
     def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...], *, primary: bool = False) -> None:
