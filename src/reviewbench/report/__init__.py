@@ -57,6 +57,8 @@ def _validate(bundle: dict) -> None:
             key = _case_key(pair), identifier(pair["provider_id"], "provider_id")
             for field in ("case_id", "condition"):
                 identifier(pair[field], field)
+            if "case_title" in pair and not isinstance(pair["case_title"], str):
+                raise StoreError("Invalid case title")
             if (type(pair["repeat_index"]) is not int or pair["repeat_index"] < 0 or pair["status"] not in _STATES
                     or not _DIGEST.fullmatch(pair["pair_id"]) or key in seen_pairs or pair["pair_id"] in seen_pair_ids):
                 raise StoreError("Invalid or duplicate results pair")
@@ -172,27 +174,32 @@ class ReportBuilder:
                 f'<meta http-equiv="Content-Security-Policy" content="{policy}">',
                 f"<title>{escape(title)} | SiftBench</title><style>{css}</style></head>",
                 '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
-                f'<a class="brand" href="#main"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
-                '<nav aria-label="Report"><a href="#scores">Scores</a><a href="#comparison">Findings</a>'
-                '<a href="#coverage">Coverage</a></nav></div></header>',
-                f'<main id="main" tabindex="-1"><div class="title"><div><h1>Reviewer benchmark</h1>'
-                f'<p class="run-meta"><span>{scope}</span> <code>{escape(bundle["run_id"])}</code></p></div>'
-                '<a class="action" href="#comparison">Compare findings <span aria-hidden="true">↓</span></a></div>']
+                f'<a class="brand" href="#overview"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
+                '<nav aria-label="Report"><a href="#overview">Overview</a><a href="#coverage">Coverage</a>'
+                '<a href="#comparison">Compare</a></nav></div></header><main id="main" tabindex="-1">',
+                '<section id="overview" data-report-view tabindex="-1"><div class="title"><div><h1>Campaign overview</h1>'
+                f'<p class="run-meta"><span>{scope}</span> <code>{escape(bundle["run_id"])}</code></p></div></div>']
         groups: dict[str, dict[str, dict]] = {}
         for pair in bundle["pairs"]:
             groups.setdefault(_case_key(pair), {})[pair["provider_id"]] = pair
         providers = list(metrics["providers"])
+        html.append('<p class="view-intro">See how the reviewers performed on changes they both reviewed.</p>'
+                    if len(providers) == 2 else '<p class="view-intro">See the results on cases completed by every reviewer.</p>')
         if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
             html.append(f'<p class="analysis-note">{escape(bundle["analysis"])}</p>')
         completed = sum(pair["status"] == "completed" for pair in bundle["pairs"])
         html.append('<dl class="run-stats" aria-label="Campaign totals">')
-        for label, value in (("Completed attempts", f'{completed} / {len(bundle["pairs"])}'),
-                             ("Shared cases and conditions", len(metrics["shared"])), ("Reviewers", len(providers))):
+        for label, value in (("Reviews captured", f'{completed} / {len(bundle["pairs"])}'),
+                             ("Case conditions scored", len(metrics["shared"])), ("Reviewers", len(providers))):
             html.append(f'<div><dt>{label}</dt><dd>{value}</dd></div>')
         html.append('</dl>')
         self._scores(html, metrics["shared"], rows)
-        self._comparison(html, groups, providers, bundle["fixture"])
+        html.append('<div class="overview-paths"><a href="#coverage"><strong>Check coverage</strong>'
+                    '<span>See which reviews completed and where there are gaps.</span></a>'
+                    '<a href="#comparison"><strong>Compare findings</strong>'
+                    '<span>Pick a case and trace a verdict to the original comment and evidence.</span></a></div></section>')
         self._coverage(html, groups, providers)
+        self._comparison(html, groups, providers, bundle["fixture"])
         html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
                     f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
         html.append(f"<script>{script}</script></body></html>")
@@ -203,8 +210,8 @@ class ReportBuilder:
 
     @staticmethod
     def _coverage(html: list[str], groups: dict, providers: list[str]) -> None:
-        html.append('<section id="coverage"><div class="section-heading"><h2>Coverage</h2>'
-                    '<p class="subtle">Open a status to read the captured findings and evidence.</p></div>')
+        html.append('<section id="coverage" data-report-view tabindex="-1"><div class="view-heading"><h1>Review coverage</h1>'
+                    '<p class="view-intro">Each row is one case and condition. Select a reviewer status to open that review.</p></div>')
         if not groups:
             html.append("<p>No cases to compare.</p></section>")
             return
@@ -213,8 +220,13 @@ class ReportBuilder:
         html.extend(f'<th scope="col">{escape(_reviewer(provider))}</th>' for provider in providers)
         html.append("</tr></thead><tbody>")
         for group in groups.values():
-            case = _case_display(next(iter(group.values())))
-            html.append(f'<tr><th scope="row">{escape(case)}</th>')
+            first = next(iter(group.values()))
+            case = _case_display(first)
+            title = first.get("case_title")
+            html.append('<tr><th scope="row">')
+            if title:
+                html.append(f'<span class="coverage-title">{escape(title)}</span>')
+            html.append(f'<span class="coverage-case">{escape(case)}</span></th>')
             for provider in providers:
                 pair = group.get(provider)
                 if pair:
@@ -229,36 +241,52 @@ class ReportBuilder:
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]]) -> None:
-        html.append('<section id="scores"><div class="section-heading"><h2>Scores</h2>'
-                    '<p class="subtle">Scores use cases completed by every reviewer.</p></div>')
+        html.append('<section id="scores" tabindex="-1"><div class="section-heading"><h2>Reviewer scores</h2>'
+                    '<p class="subtle">Scores use only the case conditions completed by every reviewer.</p></div>')
         if not rows:
             html.append("<p>No reviewer results are available.</p></section>")
             return
-        html.append('<p class="subtle small-screen-hint">Scroll the table to see all metrics.</p>'
-                    '<div class="scroll score-table" tabindex="0" role="region" aria-label="Reviewer scores"><table><thead><tr>'
-                    '<th scope="col">Reviewer</th>')
-        columns = ("Precision", "Recall", "False positives", "Novel", "Context requests", "Duplicates", "Unresolved", "Ungraded")
-        html.extend(f'<th scope="col" class="metric">{column}</th>' for column in columns)
-        html.append("</tr></thead><tbody>")
-        for provider, *counts in rows:
-            html.append(f'<tr><th scope="row">{escape(_reviewer(provider))}</th>')
-            html.extend(f'<td class="metric">{escape(count)}</td>' for count in counts)
-            html.append("</tr>")
-        html.append("</tbody></table></div>")
+        ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4))
+        html.append('<details class="score-scope"><summary>How to read the scores</summary><dl class="metric-guide">'
+                    '<div><dt>Precision</dt><dd>How many scored findings were confirmed.</dd></div>'
+                    '<div><dt>Reference recall</dt><dd>How many expected findings the reviewer caught.</dd></div>'
+                    '<div><dt>Additional findings</dt><dd>Verified findings outside the expected set.</dd></div></dl>')
         if shared:
             cases = [escape(_case_display({"case_id": case, "condition": condition, "repeat_index": 0}))
                      for case, condition in shared]
-            html.append(f'<details class="score-scope"><summary>Cases included in the scores <span>{len(cases)}</span></summary>'
-                        f'<p class="subtle">{" / ".join(cases)}</p></details>')
-        html.append("</section>")
+            html.append(f'<p class="subtle"><strong>Scored case conditions.</strong> {" / ".join(cases)}</p>')
+        html.append('</details><details class="score-scope"><summary>Additional metrics</summary>')
+        ReportBuilder._score_table(html, "Additional metrics", ("False positives", "Context requests", "Duplicates", "Unresolved", "Ungraded"), rows, (3, 5, 6, 7, 8))
+        html.append('</details></section>')
+
+    @staticmethod
+    def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...]) -> None:
+        html.append(f'<div class="scroll score-table" tabindex="0" role="region" aria-label="{label}">'
+                    '<table><thead><tr><th scope="col">Reviewer</th>')
+        html.extend(f'<th scope="col" class="metric">{column}</th>' for column in columns)
+        html.append('</tr></thead><tbody>')
+        for row in rows:
+            html.append(f'<tr><th scope="row">{escape(_reviewer(row[0]))}</th>')
+            for index in indexes:
+                value, divider, percentage = row[index].partition(" (")
+                suffix = f' <span class="score-percent">({escape(percentage)}</span>' if divider else ""
+                html.append(f'<td class="metric">{escape(value)}{suffix}</td>')
+            html.append('</tr>')
+        html.append('</tbody></table></div>')
 
     def _comparison(self, html: list[str], groups: dict, providers: list[str], fixture: bool) -> None:
-        html.append('<section id="comparison"><div class="section-heading"><h2>Compare findings</h2>'
-                    '<p class="subtle">Choose a case and reviewers, then open the evidence behind a verdict.</p></div>'
+        html.append('<section id="comparison" data-report-view tabindex="-1"><div class="view-heading"><h1>Compare findings</h1>'
+                    '<p class="view-intro">Choose a case and reviewers. Select any finding to see the code, original review, and benchmark verdict.</p></div>'
                     '<div id="comparison-controls" class="filters" hidden><label>Case and condition'
                     '<span class="select-field"><select id="compare-case">')
-        html.extend(f'<option value="{escape(key, quote=True)}">{escape(_case_display(next(iter(group.values()))))}</option>'
-                    for key, group in groups.items())
+        for key, group in groups.items():
+            case = next(iter(group.values()))
+            title = case.get("case_title") or ""
+            label = f'{title} · {_label(case["condition"])}' if title else _case_display(case)
+            if title and case["repeat_index"]:
+                label += f' · Repeat {case["repeat_index"]}'
+            html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
+                        f'{escape(label)}</option>')
         html.append(_SELECT_END)
         for title, field, selected in (("First reviewer", "left", 0), ("Second reviewer", "right", 1)):
             html.append(f'<label>{title}<span class="select-field"><select id="compare-{field}">'
@@ -267,14 +295,15 @@ class ReportBuilder:
                 selection = " selected" if selected == index else ""
                 html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(_reviewer(provider))}</option>')
             html.append(_SELECT_END)
-        html.append('</div><p id="comparison-status" class="visually-hidden" role="status"></p><div class="comparison-grid">')
+        html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>'
+                    '<div class="comparison-grid">')
         inspections: list[str] = []
         for key, group in groups.items():
             for pair in group.values():
                 self._findings(html, inspections, key, pair, fixture)
         html.append('</div><p id="comparison-empty" class="empty" ' + ('hidden' if groups else '') +
                     '>No reviews are available for this selection.</p>')
-        html.append('<div class="inspection-list">')
+        html.append('<div class="inspection-list"><h2 class="inspection-heading">Finding detail</h2>')
         html.extend(inspections)
         html.append('</div></section>')
 
@@ -291,7 +320,13 @@ class ReportBuilder:
             html.append(f'<span>{count} captured {"comment" if count == 1 else "comments"}</span>')
         pr_url = _link(pair.get("pr_url"))
         if pr_url and not fixture:
-            html.append(f'<a href="{pr_url}">Pull request <span aria-hidden="true">↗</span></a>')
+            path = urlsplit(pair["pr_url"]).path
+            if re.fullmatch(r"/[^/]+/[^/]+/pull/[0-9]+", path):
+                number = path.rsplit("/", 1)[1]
+                html.append(f'<a href="{pr_url}">PR #{number} <span aria-hidden="true">↗</span></a>'
+                            f'<a href="https://github.com{escape(path, quote=True)}/files">Files changed <span aria-hidden="true">↗</span></a>')
+            else:
+                html.append(f'<a href="{pr_url}">Pull request <span aria-hidden="true">↗</span></a>')
         html.append('</div>')
         if "head_sha" in pair:
             html.append(f'<details class="revisions"><summary>Commit revisions</summary>'

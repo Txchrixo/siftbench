@@ -116,6 +116,7 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
         for pair in pairs:
             variant = variants[pair["pair_id"]]
             pair["base_sha"], pair["head_sha"] = variant.base_sha, variant.head_sha
+            pair["case_title"] = variant.title
             pair["expected"] = [dict(row) for row in db.execute("""
                 SELECT f.expected_id, f.matching_criteria FROM expected_finding f
                 JOIN experiment_pair p USING (variant_id) WHERE p.pair_id = ? ORDER BY f.expected_id
