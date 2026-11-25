@@ -12,7 +12,7 @@ def test_wilson_interval_keeps_perfect_scores_honest():
 def test_wilson_interval_narrows_with_more_observations():
     small, large = wilson_interval(8, 10), wilson_interval(80, 100)
     assert small[1] - small[0] > large[1] - large[0]
-    assert percent_interval(4, 4) == "95% CI 51–100%"
+    assert percent_interval(4, 4) == "95% CI 51-100%"
 
 
 def test_median_interval_is_deterministic_and_needs_enough_data():

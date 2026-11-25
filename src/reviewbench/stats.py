@@ -36,4 +36,4 @@ def percent_interval(successes: int, total: int) -> str | None:
     if not interval:
         return None
     low, high = (round(value * 100) for value in interval)
-    return f"95% CI {low}–{high}%"
+    return f"95% CI {low}-{high}%"

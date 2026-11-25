@@ -68,7 +68,7 @@ def _false_positive_reading(metrics: dict, *, paired: bool) -> tuple[str, str] |
 def _latency(stats: dict) -> tuple[str, str] | None:
     if stats["n"]:
         interval = stats.get("p50_ci95")
-        spread = f' · 95% CI {interval[0]:g}–{interval[1]:g} s' if interval else ""
+        spread = f' · 95% CI {interval[0]:g}-{interval[1]:g} s' if interval else ""
         return f'{stats["p50"]:g} s', f'Median{spread} · p95 {stats["p95"]:g} s · n={stats["n"]}'
     return None
 
