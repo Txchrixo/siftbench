@@ -62,6 +62,9 @@
 .sample-attempt a .report-icon { width: .75rem; height: .75rem; }
 .sample-row[data-changed="true"] .sample-attempt:last-child .metric-stage { color: var(--info); }
 .sample-empty { padding: var(--space-4) var(--panel-inset); border-block-start: 1px solid var(--border); }
+#campaign-settings { margin-block-start: var(--space-4); }
+#campaign-settings .campaign-pair > section { margin: 0; }
+#campaign-settings h3 + p { margin-block-start: var(--space-1); }
 .recorded-config { margin-block-start: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--border); overflow-wrap: anywhere; }
 .recorded-config dl { margin-block-start: var(--space-2); }
 .recorded-config dl > div { display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-block: var(--space-1); font-size: .875rem; }

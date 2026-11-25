@@ -5,7 +5,7 @@ from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _csp_hash, _encoded, _label, _link, _pull_number,
+from . import (_SELECT_CHEVRON, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
 from ..analysis import campaign_metrics
@@ -265,12 +265,17 @@ def _coverage(result: dict) -> str:
 
 
 def _settings(result: dict) -> str:
+    if not (result["before_configuration"] or result["after_configuration"]):
+        return ('<div id="campaign-settings">'
+                + _report_notice("evidence", "Reviewer settings not recorded",
+                                 "Neither campaign archive contains settings for comparison.")
+                + "</div>")
     html = ['<details class="analysis-disclosure" id="campaign-settings"><summary>Recorded reviewer settings</summary>'
             '<div class="campaign-pair">']
     for side in ("before", "after"):
         html.append(f'<section><h3>{side.capitalize()}</h3>')
         if not result[f"{side}_configuration"]:
-            html.append('<p class="subtle">This campaign bundle does not record reviewer settings.</p>')
+            html.append('<p class="subtle">No settings recorded for this campaign.</p>')
         for row in result[f"{side}_configuration"]:
             html.append(f'<div class="recorded-config">{_reviewer_display(row["provider"])}'
                         f'<span class="coverage-case">{escape(_label(row.get("condition")))}</span><dl>')
