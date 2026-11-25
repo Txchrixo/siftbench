@@ -222,10 +222,10 @@ a.state:hover { text-decoration: underline; }
 .reviewer-picker { padding: 0; margin: 0; min-width: 0; border: 0; }
 .reviewer-picker legend { padding: 0 0 var(--space-1); color: var(--text-secondary); font-size: .8125rem; font-weight: 650; }
 #reviewer-select { position: relative; margin: 0; }
-#reviewer-select > summary { gap: var(--space-2); padding: var(--space-1) var(--space-3); border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); }
+#reviewer-select > summary { gap: var(--space-2); padding-block: var(--space-1); padding-inline: var(--space-3) 2.5rem; border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); }
 #reviewer-select > summary:hover { border-color: var(--text-secondary); }
-#reviewer-select > summary::before { order: 2; margin: 0 var(--space-1) 0 0; flex: 0 0 auto; transform: rotate(45deg); }
-#reviewer-select[open] > summary::before { transform: rotate(225deg); }
+#reviewer-select > summary::before { content: none; }
+#reviewer-select .select-chevron { position: absolute; inset-block-start: 50%; inset-inline-end: 0; translate: 0 -50%; }
 #reviewer-select > summary span { margin-inline-start: 0; }
 #reviewer-preview { display: flex; align-items: center; gap: var(--space-1); flex: 1 1 auto; min-width: 0; }
 .reviewer-chip, .reviewer-more { background: var(--secondary); border: 1px solid var(--border); border-radius: .35rem; padding: var(--space-1) var(--space-2); font-size: .8125rem; }
@@ -260,7 +260,7 @@ a.state:hover { text-decoration: underline; }
   pointer-events: none;
   transition: rotate 150ms ease;
 }
-select:open + .select-chevron { rotate: 180deg; }
+select:open + .select-chevron, #reviewer-select[open] .select-chevron { rotate: 180deg; }
 select {
   appearance: none;
   width: 100%;
@@ -574,7 +574,7 @@ details[open] > :not(summary) { animation: enter 150ms ease-out; }
 
 @media (forced-colors: active) {
   select { appearance: auto; padding-inline-end: var(--space-3); }
-  .select-chevron { display: none; }
+  .select-field > .select-chevron { display: none; }
 }
 
 @media (max-width: 46rem) {

@@ -23,9 +23,9 @@ _STATES = frozenset({
     "planned", "preparing", "awaiting_trigger", "awaiting_review", "completed",
     "invalid_input", "needs_attention", "timed_out", "failed", "quota",
 })
-_SELECT_END = ('</select><svg class="select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true" '
-               'focusable="false"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" '
-               'stroke-linecap="round" stroke-linejoin="round"/></svg></span></label>')
+_SELECT_CHEVRON = ('<svg class="select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true" '
+                   'focusable="false"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" '
+                   'stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 
 def _link(url: object) -> str | None:
@@ -307,10 +307,10 @@ class ReportBuilder:
                 label += f' · Repeat {case["repeat_index"]}'
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
                         f'{icon("pr")}<span class="option-label">{escape(label)}</span></option>')
-        html.append(_SELECT_END)
+        html.append(f'</select>{_SELECT_CHEVRON}</span></label>')
         html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend>'
                     '<details id="reviewer-select"><summary><span class="visually-hidden">Select reviewers</span>'
-                    '<span id="reviewer-preview"></span><span id="reviewer-count"></span></summary>'
+                    f'<span id="reviewer-preview"></span><span id="reviewer-count"></span>{_SELECT_CHEVRON}</summary>'
                     '<div class="reviewer-panel">')
         if len(providers) > 2:
             html.append('<div class="reviewer-actions"><button type="button" data-select-reviewers="all">Select all</button>'
