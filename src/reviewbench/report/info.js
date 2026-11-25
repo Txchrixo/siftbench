@@ -7,6 +7,7 @@
   tip.hidden = true;
   document.body.append(tip);
   const part = (tag, className, text) => {
+    if (!text) return null;
     const node = document.createElement(tag);
     if (className) node.className = className;
     node.textContent = text;
@@ -26,17 +27,20 @@
   };
   const show = (target, x, y) => {
     const d = target.dataset;
-    tip.replaceChildren(part("strong", "", d.rangeTitle), part("output", "", d.rangeMain),
-      part("span", "tip-detail", d.rangeDetail), part("span", "tip-range", d.rangeRange), part("span", "tip-help", d.rangeHelp));
+    tip.replaceChildren(...[part("strong", "", d.rangeTitle), part("output", "", d.rangeMain),
+      part("span", "tip-detail", d.rangeDetail), part("span", "tip-range", d.rangeRange), part("span", "tip-help", d.rangeHelp)]
+      .filter(Boolean));
     tip.hidden = false;
     place(x, y);
     focusRow(target, true);
   };
   const hide = (target) => { tip.hidden = true; if (target) focusRow(target, false); };
   for (const target of targets) {
-    target.addEventListener("pointerenter", event => show(target, event.clientX, event.clientY));
-    target.addEventListener("pointermove", event => place(event.clientX, event.clientY));
-    target.addEventListener("pointerleave", () => hide(target));
+    if (!("rangeFocusOnly" in target.dataset)) {
+      target.addEventListener("pointerenter", event => show(target, event.clientX, event.clientY));
+      target.addEventListener("pointermove", event => place(event.clientX, event.clientY));
+      target.addEventListener("pointerleave", () => hide(target));
+    }
     target.addEventListener("focus", () => {
       const box = target.getBoundingClientRect();
       show(target, box.left + box.width / 2, box.top + box.height / 2);

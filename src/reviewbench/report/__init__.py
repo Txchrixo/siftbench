@@ -74,37 +74,53 @@ def _with_interval(text: str) -> str:
 
 _METRIC_NOUNS = {"Precision": "findings confirmed as real problems",
                  "Reference recall": "expected problems found"}
+_SCALE_ENDS = {"Precision": ("no finding confirmed", "every finding confirmed"),
+               "Reference recall": ("no expected problem found", "every expected problem found")}
 
 
-def _range_tip(successes: int, total: int, title: str, metric: str) -> str:
-    """Data attributes read by the shared tooltip script. All values are escaped."""
+def _tip(**values: str) -> str:
+    """Data attributes read by the shared tooltip script. Empty values are left out and all text is escaped."""
+    return " ".join(f'data-range-{key}="{escape(value, quote=True)}"' for key, value in values.items() if value)
+
+
+def _range_tips(successes: int, total: int, title: str, metric: str) -> dict[str, str]:
+    """One explanation per part of the bar: the scale, the likely range and the observed score."""
     low, high = percent_bounds(successes, total)
     width = high - low
-    verdict = ("Wide range: too few observations to be sure of this score." if width >= 40
-               else "Moderate range: the score is a rough guide." if width >= 20
-               else "Narrow range: the score is fairly well supported.")
-    values = {
-        "title": title,
-        "main": f"{round(successes / total * 100)}%",
-        "detail": f"{successes} of {total} {_METRIC_NOUNS.get(metric, 'observations')}",
-        "range": f"Likely {low}-{high}%",
-        "help": f"With this many observations, the true rate could plausibly be anywhere in that range. {verdict}",
+    verdict = ("Wide: there are too few observations to be sure of this score." if width >= 40
+               else "Moderate: the score is a rough guide." if width >= 20
+               else "Narrow: the score is fairly well supported.")
+    left, right = _SCALE_ENDS.get(metric, ("none", "all"))
+    noun = _METRIC_NOUNS.get(metric, "observations")
+    score = round(successes / total * 100)
+    return {
+        "score": _tip(title=f"{title} · observed score", main=f"{score}%", detail=f"{successes} of {total} {noun}",
+                      help="What was actually measured. It is only an estimate of the true rate."),
+        "range": _tip(title=f"{title} · likely range", main=f"{low}-{high}%", detail="95% confidence interval",
+                      help=f"The true rate could plausibly be anywhere in this range. {verdict}"),
+        "scale": _tip(title=f"{title} · scale", main="0 to 100%", detail=f"Left end 0%: {left}. Right end 100%: {right}.",
+                      help="The shorter the shaded range, the more reliable the score."),
+        "summary": _tip(title=title, main=f"{score}%", detail=f"{successes} of {total} {noun}",
+                        range=f"Likely {low}-{high}%", help=f"The true rate could plausibly be anywhere in that range. {verdict}"),
     }
-    return " ".join(f'data-range-{key}="{escape(value, quote=True)}"' for key, value in values.items())
 
 
 def _range_bar(successes: int, total: int, *, title: str = "", metric: str = "") -> str:
-    """A 0-100% track with the likely range shaded and the observed value marked."""
+    """A 0-100% bar. Its track, shaded range and score marker each explain themselves on hover."""
     bounds = percent_bounds(successes, total)
     if not bounds:
         return ""
     low, high = bounds
     point = min(max(round(successes / total * 100) - 1, 0), 98)
-    return (f'<span class="range" tabindex="0" {_range_tip(successes, total, title or metric, metric)}>'
-            '<svg class="range-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
-            '<rect class="range-track" x="0" y="2.5" width="100" height="1"/>'
-            f'<rect class="range-band" x="{low}" y="1" width="{max(high - low, 1)}" height="4" rx="1"/>'
-            f'<rect class="range-point" x="{point}" y="0" width="2" height="6"/></svg>'
+    tips = _range_tips(successes, total, title or metric, metric)
+    return ('<span class="range"><span class="range-plot" tabindex="0" data-range-focus-only '
+            f'{tips["summary"]}><svg class="range-bar" viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+            f'<g class="range-part range-scale" {tips["scale"]}><rect class="range-track" x="0" y="7.5" width="100" height="1"/>'
+            '<rect class="range-hit" x="0" y="0" width="100" height="16"/></g>'
+            f'<g class="range-part range-span" {tips["range"]}><rect class="range-band" x="{low}" y="5" width="{max(high - low, 1)}" height="6" rx="1"/>'
+            f'<rect class="range-hit" x="{low}" y="0" width="{max(high - low, 1)}" height="16"/></g>'
+            f'<g class="range-part range-score" {tips["score"]}><rect class="range-point" x="{point}" y="2" width="2" height="12"/>'
+            f'<rect class="range-hit" x="{max(point - 2, 0)}" y="0" width="6" height="16"/></g></svg></span>'
             f'<span class="range-label">Likely {low}-{high}%<span class="visually-hidden"> (95% confidence interval)</span></span></span>')
 
 
@@ -122,9 +138,13 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
     out = ['<figure class="interval-figure" aria-labelledby="interval-title"><figcaption>'
            f'<h3><span id="interval-title">How sure are these scores?</span>{info("interval")}</h3>'
            '<p class="subtle">The line is the likely range and the dot is the observed score. '
-           'Where lines overlap, the data cannot tell the reviewers apart.</p></figcaption>'
+           'Hover any part to see what it means. Where lines overlap, the data cannot tell the reviewers apart.</p></figcaption>'
            '<div class="interval-grid"><span class="interval-corner"></span>']
     out.extend(f'<h4 class="interval-heading">{label}</h4>' for label, _ in metrics)
+
+    def x(value: float) -> float:
+        return 10 + 280 * value / 100
+
     for row in rows:
         out.append(f'<div class="interval-row" data-reviewer="{escape(row[0], quote=True)}"><div class="interval-name">{_reviewer_display(row[0])}</div>')
         for label, index in metrics:
@@ -134,16 +154,22 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
                 continue
             low, high = percent_bounds(*counts)
             score = round(counts[0] / counts[1] * 100)
-            tip = _range_tip(*counts, f"{_reviewer(row[0])} · {label}", label)
-            x = lambda value: 10 + 280 * value / 100
-            out.append(f'<div class="interval-cell" data-metric="{label}"><svg class="interval-plot" viewBox="0 0 300 26" aria-hidden="true" focusable="false">'
-                       + "".join(f'<line class="interval-grid-line" x1="{x(v):g}" x2="{x(v):g}" y1="2" y2="24"/>' for v in (0, 25, 50, 75, 100))
-                       + f'<line class="interval-whisker" x1="{x(low):g}" x2="{x(high):g}" y1="13" y2="13"/>'
-                       f'<line class="interval-cap" x1="{x(low):g}" x2="{x(low):g}" y1="8" y2="18"/>'
-                       f'<line class="interval-cap" x1="{x(high):g}" x2="{x(high):g}" y1="8" y2="18"/>'
-                       f'<circle class="interval-dot" cx="{x(score):g}" cy="13" r="5"/></svg>'
-                       f'<span class="interval-focus" tabindex="0" {tip} aria-label="{escape(f"{_reviewer(row[0])}, {label}: {score}%, likely {low} to {high}%", quote=True)}"></span>'
-                       f'<span class="interval-value">{score}% <span class="subtle">Likely {low}-{high}%</span></span></div>')
+            tips = _range_tips(*counts, f"{_reviewer(row[0])} · {label}", label)
+            summary = escape(f"{_reviewer(row[0])}, {label}: {score}%, likely {low} to {high}%", quote=True)
+            out.append(
+                f'<div class="interval-cell" data-metric="{label}"><svg class="interval-plot" viewBox="0 0 300 26" aria-hidden="true" focusable="false">'
+                f'<g class="interval-part interval-scale" {tips["scale"]}>'
+                + "".join(f'<line class="interval-grid-line" x1="{x(v):g}" x2="{x(v):g}" y1="2" y2="24"/>' for v in (0, 25, 50, 75, 100))
+                + '<rect class="interval-hit" x="0" y="0" width="300" height="26"/></g>'
+                f'<g class="interval-part interval-span" {tips["range"]}>'
+                f'<line class="interval-whisker" x1="{x(low):g}" x2="{x(high):g}" y1="13" y2="13"/>'
+                f'<line class="interval-cap" x1="{x(low):g}" x2="{x(low):g}" y1="8" y2="18"/>'
+                f'<line class="interval-cap" x1="{x(high):g}" x2="{x(high):g}" y1="8" y2="18"/>'
+                f'<rect class="interval-hit" x="{x(low) - 3:g}" y="4" width="{x(high) - x(low) + 6:g}" height="18"/></g>'
+                f'<g class="interval-part interval-score" {tips["score"]}><circle class="interval-dot" cx="{x(score):g}" cy="13" r="5"/>'
+                f'<circle class="interval-hit" cx="{x(score):g}" cy="13" r="10"/></g></svg>'
+                f'<span class="interval-focus" tabindex="0" data-range-focus-only {tips["summary"]} aria-label="{summary}"></span>'
+                f'<span class="interval-value">{score}% <span class="subtle">Likely {low}-{high}%</span></span></div>')
         out.append('</div>')
     out.append('<span class="interval-corner"></span>'
                + "".join(f'<ol class="interval-ticks subtle" aria-hidden="true">{ticks}</ol>' for _ in metrics)

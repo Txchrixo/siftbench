@@ -265,9 +265,9 @@ th:first-child { position: sticky; inset-inline-start: 0; background: var(--surf
 .main-scores { border-top: 1px solid var(--border); }
 .main-scores th, .main-scores td { padding: var(--space-3) var(--panel-inset); }
 .main-scores .metric > strong { font-size: clamp(1rem, 2vw, 1.3rem); line-height: 1.2; }
-.range { display: grid; justify-items: end; gap: .1875rem; inline-size: 7.5rem; margin: var(--space-2) 0 0 auto; }
+.range { display: grid; justify-items: end; gap: 0; inline-size: 7.5rem; margin: var(--space-1) 0 0 auto; }
 .metric-reading .range { justify-items: start; margin-inline: 0; }
-.range-bar { display: block; inline-size: 100%; block-size: .375rem; overflow: visible; }
+.range-bar { display: block; inline-size: 100%; block-size: 1rem; overflow: visible; }
 .range-track { fill: var(--border); }
 .range-band { fill: color-mix(in srgb, var(--info) 45%, transparent); }
 .range-point { fill: var(--text-primary); }
@@ -988,10 +988,15 @@ option:not(:checked) .option-check { transform: scale(.4); }
 .info-points li span:not(.info-dot) { color: var(--text-secondary); font-size: .8125rem; }
 .info-note { margin: 0; padding-block-start: var(--space-3); border-block-start: 1px solid var(--border); color: var(--text-secondary); font-size: .8125rem; }
 
-.range { cursor: default; border-radius: .25rem; transition: background-color var(--fast) ease; }
-.range:is(:hover, :focus-visible) { background: var(--border); outline-offset: 2px; }
-.range:is(:hover, :focus-visible) .range-band { fill: color-mix(in srgb, var(--info) 75%, transparent); }
-.range:is(:hover, :focus-visible) .range-label { color: var(--text-primary); }
+.range-plot { display: block; border-radius: .25rem; }
+.range-plot:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.range-part { cursor: default; }
+.range-hit, .interval-hit { fill: transparent; }
+.range-part .range-band { transition: fill var(--fast) ease; }
+.range-part .range-point { transition: fill var(--fast) ease; }
+.range-span:hover .range-band { fill: color-mix(in srgb, var(--info) 80%, transparent); }
+.range-score:hover .range-point { fill: var(--info); }
+.range-scale:hover .range-track { fill: var(--text-muted); }
 .interval-figure { margin: 0; padding: var(--space-4) var(--panel-inset) var(--space-3); border-block-start: 1px solid var(--border); }
 .interval-figure figcaption { display: grid; gap: var(--space-1); margin-block-end: var(--space-3); }
 .interval-figure h3 { margin: 0; font-size: 1rem; }
@@ -1008,10 +1013,12 @@ option:not(:checked) .option-check { transform: scale(.4); }
 .interval-whisker { stroke: var(--info); stroke-width: 3; stroke-linecap: round; opacity: .55; vector-effect: non-scaling-stroke; transition: opacity var(--fast) ease; }
 .interval-cap { stroke: var(--info); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .interval-dot { fill: var(--text-primary); stroke: var(--secondary); stroke-width: 2; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; transition: transform var(--fast) var(--ease-out); animation: dot-in 360ms var(--ease-out) backwards; }
-.interval-focus { position: absolute; inset: 0; border-radius: .25rem; cursor: default; }
+.interval-focus { position: absolute; inset: 0 0 auto; block-size: 1.625rem; border-radius: .25rem; pointer-events: none; }
 .interval-focus:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
-.interval-cell:has(.interval-focus:is(:hover, :focus-visible)) .interval-whisker { opacity: 1; }
-.interval-cell:has(.interval-focus:is(:hover, :focus-visible)) .interval-dot { transform: scale(1.25); }
+.interval-part { cursor: default; }
+.interval-span:hover .interval-whisker, .interval-cell:has(.interval-focus:focus-visible) .interval-whisker { opacity: 1; }
+.interval-score:hover .interval-dot, .interval-cell:has(.interval-focus:focus-visible) .interval-dot { transform: scale(1.3); }
+.interval-scale:hover .interval-grid-line { stroke: var(--text-muted); }
 .interval-value { font-size: .8125rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .interval-value .subtle { font-weight: 500; }
 .interval-empty { font-size: .8125rem; }

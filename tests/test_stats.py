@@ -37,9 +37,14 @@ def test_interval_chart_shares_one_axis_and_explains_each_range():
             ("coderabbit", "No scored findings", "No reference findings")]
     chart = _interval_chart(rows)
     assert chart.count('class="interval-row"') == 3
-    assert chart.count('data-range-help="') == 4
+    # Four scored readings, each with a scale, a likely range, an observed score and a keyboard summary.
+    assert chart.count('data-range-help="') == 16
+    for part in ("observed score", "likely range", "scale"):
+        assert f"Proofline · Reference recall · {part}" in chart
     assert 'data-range-range="Likely 30-95%"' in chart
     assert "No scored findings" in chart
     assert _interval_chart([("a", "No scored findings", "No reference findings")]) == ""
     bar = _range_bar(3, 4, title="Proofline · Reference recall", metric="Reference recall")
-    assert 'data-range-detail="3 of 4 expected problems found"' in bar and "Wide range" in bar
+    assert 'data-range-detail="3 of 4 expected problems found"' in bar and "Wide: there are too few" in bar
+    assert bar.count("range-part") == 3 and "Left end 0%: no expected problem found" in bar
+    assert '<span class="range-label">Likely 30-95%' in bar and bar.index("range-label") > bar.index("</svg></span>")

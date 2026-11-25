@@ -89,7 +89,7 @@ _ENTRIES: dict[str, dict] = {
         "kind": "Statistics", "tone": "hl", "title": "95% confidence interval",
         "lead": 'Shown as <b class="hl">Likely</b>: the range the true value could plausibly fall in, given how few observations there are.',
         "points": (
-            ("hl", "Reading the chart", "The line is the likely range on a 0 to 100% scale. The dot is the observed score. Hover or focus either one for details."),
+            ("hl", "Reading the chart", "The grey scale runs from 0 to 100%. The blue line is the likely range and the white dot is the observed score. Hover each part to see what it means."),
             ("hl", "Wide means unsure", "5 of 5 correct is 100%, but the likely range still starts near 57%."),
             ("warn", "Slightly optimistic", "Each finding counts separately. Findings one reviewer leaves on the same pull request are related, so the range is a little too narrow when a reviewer has several per pull request."),
             ("ok", "Overlap", "When two reviewers' ranges overlap heavily, the data cannot separate them."),
