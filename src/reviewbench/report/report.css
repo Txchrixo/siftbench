@@ -381,8 +381,12 @@ select:hover { border-color: var(--text-secondary); }
 .severity { margin-top: var(--space-2); }
 .severity strong { margin-inline-start: var(--space-1); color: var(--text-primary); }
 .review-copy { margin: .75rem 0 0; max-width: 65ch; line-height: 1.65; }
-.review-copy > * { margin: 0; }
-.review-copy > * + * { margin-top: .65rem; }
+.review-copy > *, .disclosure-copy > * { margin: 0; }
+.review-copy > * + *, .disclosure-copy > * + * { margin-top: .65rem; }
+.review-disclosure { border-inline-start: 2px solid var(--border); padding-inline-start: var(--space-2); }
+.disclosure-copy { padding: var(--space-2) var(--space-2) var(--space-3); }
+.raw-comment { margin-top: var(--space-4); border-top: 1px solid var(--border); }
+.raw-comment > p { padding: var(--space-2); font-size: .8125rem; }
 .review-copy :is(ul, ol), .finding > ul { padding-inline-start: 1.2rem; }
 .review-copy li + li { margin-top: .22rem; }
 .review-copy :not(pre) > code {

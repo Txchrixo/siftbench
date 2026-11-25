@@ -8,7 +8,9 @@ def test_review_metadata_becomes_a_readable_heading():
                  '**Warning** · History skips rows\n\nUse a `cursor`.\n\n'
                  '[View finding in Proofline](https://proofline.sh/path)')
     assert review_text(greptile) == ("History skips rows", "P1", "Use a `cursor`.")
-    assert review_text(proofline) == ("History skips rows", "Warning", "Use a `cursor`.")
+    title, severity, body = review_text(proofline)
+    assert (title, severity) == ("History skips rows", "Warning")
+    assert blocks(body) == '<p>Use a <code>cursor</code>.</p>'
 
 
 def test_review_formatting_keeps_untrusted_content_inert():
@@ -19,3 +21,22 @@ def test_review_formatting_keeps_untrusted_content_inert():
         '<ul><li>&lt;img src=x onerror=alert(1)&gt;</li><li>Open</li></ul>'
         '<pre><code>&lt;script&gt;run()&lt;/script&gt;</code></pre>'
     )
+
+
+def test_review_summary_hides_provider_markers_and_redundant_footer():
+    raw = ('<!-- proofline:review-comment -->\n**Proofline** has 1 new finding to review.\n\n'
+           '[View full review in Proofline](https://proofline.sh/path)\n\n'
+           '<!-- proofline:published-findings --> <!-- proofline:published-finding-series=abc -->\n'
+           '<!-- /proofline:published-findings -->')
+    assert blocks(review_text(raw)[2]) == '<p><strong>Proofline</strong> has 1 new finding to review.</p>'
+
+
+def test_review_disclosure_formats_details_and_leaves_code_literals_alone():
+    raw = ('<details>\n<summary>Details</summary>\n\nFollow [`reports.py`](https://example.test/file).\n\n'
+           '```html\n<!-- proofline:literal -->\n<details>\n```\n</details>')
+    assert blocks(raw) == (
+        '<details class="review-disclosure"><summary>Reviewer details</summary><div class="disclosure-copy">'
+        '<p>Follow <code>reports.py</code>.</p><pre><code>&lt;!-- proofline:literal --&gt;\n&lt;details&gt;</code></pre>'
+        '</div></details>'
+    )
+    assert '&lt;details onclick=' in blocks('<details onclick="untrusted">')

@@ -352,9 +352,11 @@ class ReportBuilder:
         html.append('<div class="inspection-body"><div class="observation"><h4>Reviewer comment</h4>')
         if severity:
             html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong></p>')
-        if body:
-            html.append(f'<blockquote class="review-copy">{blocks(body)}</blockquote>')
-        html.append(f'<details><summary>Original comment text</summary><pre>{escape(claim["body"])}</pre></details></div>')
+        if rendered := blocks(body):
+            html.append(f'<blockquote class="review-copy">{rendered}</blockquote>')
+        html.append('<details class="raw-comment"><summary>Raw comment source</summary>'
+                    '<p class="subtle">Unformatted text captured with the review.</p>'
+                    f'<pre>{escape(claim["body"])}</pre></details></div>')
         html.append('<div class="evaluation"><h4>Benchmark verdict</h4>'
                     f'<p class="verdict {decision or "ungraded"}">{_label(decision)}</p>')
         if claim["rationale"]:
