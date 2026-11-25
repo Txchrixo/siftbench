@@ -9,6 +9,7 @@ from reviewbench.audit import audit_campaign
 from reviewbench.corpus import prepare_corpus
 from reviewbench.github import PullRequest
 from reviewbench.manifest import ManifestLoader
+from reviewbench.report.comparison import operational_metrics
 
 
 def _bundle(manifest, run_id="pilot"):
@@ -23,6 +24,21 @@ def _bundle(manifest, run_id="pilot"):
                       "timing": {"review_started_at": 100, "published_at": 115}})
     return {"fixture": False, "run_id": run_id, "manifest_digest": manifest.manifest_digest,
             "rubric_digest": manifest.rubric_digest, "pairs": pairs}
+
+
+def test_operational_metrics_distinguish_no_completions_from_partial_grading(manifest_data):
+    manifest_data["repeats"] = 2
+    bundle = _bundle(ManifestLoader.parse(manifest_data))
+    one = [pair for pair in bundle["pairs"] if pair["provider_id"] == "one"]
+    two = [pair for pair in bundle["pairs"] if pair["provider_id"] == "two"]
+    one[0]["claims"] = [{"decision": "false_positive"}]
+    one[1]["claims"] = [{"decision": "unresolved"}]
+    for pair in two:
+        pair["status"] = "awaiting_review"
+    report = operational_metrics(bundle)
+    assert "<strong>1 false positive</strong><small>1 of 2 completed PRs graded</small>" in report
+    assert "<strong>No completed reviews</strong>" in report
+    assert "Grading incomplete" not in report
 
 
 def test_paired_scope_keeps_repeats_and_missing_data_visible(manifest_data):

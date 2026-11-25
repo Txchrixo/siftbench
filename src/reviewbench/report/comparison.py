@@ -1,5 +1,6 @@
 """Operational and paired campaign views for self-contained reports."""
 
+from dataclasses import dataclass
 from html import escape
 from importlib.resources import files
 from pathlib import Path
@@ -21,6 +22,35 @@ _METRICS = (
     ("Observed cost", "Median per attempt, in currency minor units"),
 )
 
+_MISSING_LABELS = {
+    "Precision": "No scored findings",
+    "Reference recall": "No reference findings to score",
+    "Severe findings missed": "No graded high or critical references",
+}
+
+
+@dataclass(frozen=True)
+class _MetricState:
+    label: str
+    detail: str = ""
+    incomplete: bool = False
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+def _false_positive_reading(metrics: dict, *, paired: bool) -> tuple[str, str] | _MetricState:
+    reading = metrics["false_positives_per_graded_pr"]
+    graded, completed = reading["graded_prs"], metrics["completed"]
+    if not completed:
+        return _MetricState("No matched reviews" if paired else "No completed reviews")
+    if not graded:
+        return _MetricState("Grading incomplete", f'0 of {_plural(completed, "completed PR")} graded', incomplete=True)
+    detail = (f'Across {_plural(graded, "graded PR")}' if graded == completed
+              else f'{graded} of {_plural(completed, "completed PR")} graded')
+    return _plural(reading["false_positives"], "false positive"), detail
+
 
 def _latency(stats: dict) -> tuple[str, str] | None:
     if stats["n"]:
@@ -35,15 +65,14 @@ def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = Fa
     return (f"{numerator / denominator:.0%}", count) if percent else (count, unit)
 
 
-def _values(metrics: dict) -> tuple:
-    false = metrics["false_positives_per_graded_pr"]
+def _values(metrics: dict, *, paired: bool = False) -> tuple:
     severe = metrics["high_severity"]
     costs = tuple((f'{currency} {stats["p50"]:g}', f'n={stats["n"]}')
                   for currency, stats in metrics["observed_cost_minor"].items())
     return (
         _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True),
         _fraction(metrics["matched"], metrics["expected"], "", percent=True),
-        _fraction(false["false_positives"], false["graded_prs"], "False positives / graded PRs"),
+        _false_positive_reading(metrics, paired=paired),
         _fraction(severe["missed"], severe["expected"], "Missed / expected"),
         _latency(metrics["completion_seconds"]),
         _latency(metrics["first_verified_finding_seconds"]),
@@ -51,9 +80,13 @@ def _values(metrics: dict) -> tuple:
     )
 
 
-def _value(value: tuple | None) -> str:
-    if value is None:
-        return '<span class="metric-missing"><span aria-hidden="true">–</span><span class="visually-hidden">Unavailable</span></span>'
+def _value(value: tuple | _MetricState | None, label: str) -> str:
+    if isinstance(value, _MetricState) or value is None:
+        status = value if isinstance(value, _MetricState) else _MetricState(_MISSING_LABELS.get(label, "Not measured"))
+        state_class = " metric-state-incomplete" if status.incomplete else ""
+        detail = f'<small>{escape(status.detail)}</small>' if status.detail else ""
+        return (f'<span class="metric-reading metric-state{state_class}">'
+                f'<strong>{escape(status.label)}</strong>{detail}</span>')
     records = (value,) if isinstance(value[0], str) else value
     return "".join(f'<span class="metric-reading"><strong>{escape(main)}</strong>'
                    f'<small>{escape(detail)}</small></span>' for main, detail in records)
@@ -77,10 +110,10 @@ def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool
             if paired:
                 before, after = reading
                 row.append('<td><div class="metric-transition">'
-                           f'<div><span class="metric-stage">Before</span>{_value(before)}</div>'
-                           f'{icon("compare")}<div><span class="metric-stage">After</span>{_value(after)}</div></div></td>')
+                           f'<div><span class="metric-stage">Before</span>{_value(before, label)}</div>'
+                           f'{icon("compare")}<div><span class="metric-stage">After</span>{_value(after, label)}</div></div></td>')
             else:
-                row.append(f'<td>{_value(reading)}</td>')
+                row.append(f'<td>{_value(reading, label)}</td>')
         measured.append("".join(row) + "</tr>")
     html = ['<div class="metric-panel">']
     if measured:
@@ -91,9 +124,16 @@ def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool
         for reviewer, detail in headers:
             html.append(f'<th scope="col">{_reviewer_display(reviewer)}<span class="coverage-case">{escape(detail)}</span></th>')
         html.extend(("</tr></thead><tbody>", *measured, "</tbody></table></div>"))
+    not_measured = [label for label in unavailable if label not in _MISSING_LABELS]
     if unavailable:
-        html.append('<p class="metric-note"><strong>Unavailable for all reviewers</strong>'
-                    f'<span>{escape(" · ".join(unavailable))}</span></p>')
+        html.append('<div class="metric-notes">')
+        if not_measured:
+            html.append('<p class="metric-note"><strong>Not measured</strong>'
+                        f'<span>{escape(" · ".join(not_measured))}</span></p>')
+        for label in unavailable:
+            if label in _MISSING_LABELS:
+                html.append(f'<p class="metric-note"><strong>{label}</strong><span>{_MISSING_LABELS[label]}</span></p>')
+        html.append("</div>")
     html.append("</div>")
     return "".join(html)
 
@@ -234,7 +274,8 @@ def write_comparison(result: dict, out: Path) -> None:
                 '<p class="subtle">Each reviewer is compared on the same pull requests and repetitions completed in both campaigns.</p></div>')
     reviewers = result["reviewers"]
     headers = [(row["reviewer"], f'{row["completed_in_both"]} / {row["planned_in_both"]} matched completions') for row in reviewers]
-    values = [tuple(zip(_values(row["before"]), _values(row["after"]), strict=True)) for row in reviewers]
+    values = [tuple(zip(_values(row["before"], paired=True), _values(row["after"], paired=True), strict=True))
+              for row in reviewers]
     html.extend((_matrix(headers, values, paired=True), "</section>", _coverage(result), _settings(result),
                  f'</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
                  f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>',

@@ -25,6 +25,13 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert CampaignRunner(RunStore(state), transport).step(manifest) == statuses
     assert len(transport.pulls) == 2
 
+    before_grading = tmp_path / "before-grading"
+    assert main(["--state-dir", str(state), "report", "--run-id", "pilot", "--out", str(before_grading)]) == 0
+    before_html = (before_grading / "report.html").read_text(encoding="utf-8")
+    before_metrics = before_html.split('id="operational-metrics"', 1)[1].split("</section>", 1)[0]
+    assert "Grading incomplete" in before_metrics and "0 of 1 completed PR graded" in before_metrics
+    assert "<strong>0 false positives</strong><small>Across 1 graded PR</small>" in before_metrics
+
     claim, = claims_for_grading(store, manifest.run_id)
     assert "source_url" not in claim
     grades = tmp_path / "grades.jsonl"
@@ -51,7 +58,8 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     html = (first / "report.html").read_text(encoding="utf-8")
     assert "Fixture run" in html and "&lt;script&gt;" in html and html.count("<script>") == 1
     operations = html.split('id="operational-metrics"', 1)[1].split("</section>", 1)[0]
-    assert operations.count("Unavailable for all reviewers") == 1
+    assert operations.count("<strong>Not measured</strong>") == 1
+    assert "Grading incomplete" not in operations
     assert 'aria-label="Metrics by reviewer"' in operations
     assert "#discussion_r1" in html and "Expected ID 42" in html
     assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html

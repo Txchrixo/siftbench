@@ -13,10 +13,13 @@
 .metric-reading { display: grid; }
 .metric-reading + .metric-reading { margin-block-start: var(--space-2); }
 .metric-reading strong { font-size: 1rem; }
-.metric-reading small, .metric-stage, .metric-missing { color: var(--text-secondary); }
+.metric-reading small, .metric-stage, .metric-state strong { color: var(--text-secondary); }
 .metric-reading small, .metric-stage { font-size: .75rem; }
+.metric-state strong { font-size: .875rem; }
+.metric-state-incomplete strong { color: var(--warning); }
 .metric-stage { display: block; font-weight: 650; margin-block-end: var(--space-1); }
-.metric-note { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-3) var(--panel-inset); font-size: .8125rem; color: var(--text-secondary); }
+.metric-notes { display: grid; gap: var(--space-2); padding: var(--space-3) var(--panel-inset); border-block-start: 1px solid var(--border); }
+.metric-note { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); font-size: .8125rem; color: var(--text-secondary); }
 .metric-note strong { color: var(--text-primary); }
 .metric-scroll-hint { display: none; padding: var(--space-2) var(--panel-inset); font-size: .75rem; }
 .analysis-disclosure { margin-block: var(--space-3); background: var(--secondary); border-radius: .5rem; }
