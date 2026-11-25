@@ -8,6 +8,7 @@ from statistics import median
 
 from .grading import ScoreCalculator
 from .manifest import canonical_json, digest
+from .stats import median_interval
 
 
 SCORING_POLICY_VERSION = 1
@@ -35,8 +36,10 @@ def _elapsed(start, end) -> float | None:
 
 def _distribution(values: list[float]) -> dict:
     values.sort()
+    interval = median_interval(values)
     return {"n": len(values), "p50": median(values) if values else None,
-            "p95": values[ceil(.95 * len(values)) - 1] if values else None}
+            "p95": values[ceil(.95 * len(values)) - 1] if values else None,
+            "p50_ci95": [round(value, 3) for value in interval] if interval else None}
 
 
 def _scope(pairs: list[dict]) -> dict:

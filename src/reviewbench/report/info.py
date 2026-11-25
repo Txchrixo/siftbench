@@ -85,6 +85,16 @@ _ENTRIES: dict[str, dict] = {
             ("warn", "Incomplete is information", "Timeouts and failures are kept in the report, not hidden."),
         ),
     },
+    "interval": {
+        "kind": "Statistics", "tone": "hl", "title": "95% confidence interval",
+        "lead": 'The range the true rate could plausibly fall in, given <b class="hl">how few findings</b> were observed.',
+        "points": (
+            ("hl", "Wide means unsure", "5 of 5 correct is 100%, but the interval can still start near 57%."),
+            ("warn", "Likely optimistic", "It treats findings as independent. Findings on one pull request are related, so the real range is wider."),
+            ("ok", "Overlap", "When two reviewers' ranges overlap heavily, the data cannot separate them."),
+        ),
+        "note": "Timing intervals bootstrap the median and appear from 5 observations.",
+    },
     "scored_conditions": {
         "kind": "Campaign total", "tone": "hl", "title": "Scored conditions",
         "lead": 'Pull request setups that <b class="hl">every reviewer completed</b>. Only these feed the score table.',

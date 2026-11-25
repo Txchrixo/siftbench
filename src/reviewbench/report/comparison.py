@@ -12,6 +12,7 @@ from .info import info, info_templates
 from .latency import publication_latency
 from ..analysis import campaign_metrics
 from ..manifest import canonical_json
+from ..stats import percent_interval
 
 
 _METRICS = (
@@ -66,7 +67,9 @@ def _false_positive_reading(metrics: dict, *, paired: bool) -> tuple[str, str] |
 
 def _latency(stats: dict) -> tuple[str, str] | None:
     if stats["n"]:
-        return f'{stats["p50"]:g} s', f'Median · p95 {stats["p95"]:g} s · n={stats["n"]}'
+        interval = stats.get("p50_ci95")
+        spread = f' · 95% CI {interval[0]:g}–{interval[1]:g} s' if interval else ""
+        return f'{stats["p50"]:g} s', f'Median{spread} · p95 {stats["p95"]:g} s · n={stats["n"]}'
     return None
 
 
@@ -74,7 +77,8 @@ def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = Fa
     if not denominator:
         return None
     count = f"{numerator} / {denominator}"
-    return (f"{numerator / denominator:.0%}", count) if percent else (count, unit)
+    interval = percent_interval(numerator, denominator)
+    return (f"{numerator / denominator:.0%}", f"{count} · {interval}" if interval else count) if percent else (count, unit)
 
 
 def _values(metrics: dict, *, paired: bool = False) -> tuple:

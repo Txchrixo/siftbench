@@ -83,7 +83,7 @@ def test_paired_scope_keeps_repeats_and_missing_data_visible(manifest_data):
     assert result["planned_samples"] == 2 and first["completed_in_both"] == 1 and second["completed_in_both"] == 2
     assert first["after_coverage"]["status_counts"]["timed_out"] == 1
     assert first["after"]["high_severity"] == {"expected": 1, "missed": 1}
-    assert first["after"]["completion_seconds"] == {"n": 1, "p50": 15, "p95": 15}
+    assert first["after"]["completion_seconds"] == {"n": 1, "p50": 15, "p95": 15, "p50_ci95": None}
     summary = campaign_metrics(after, reviewer_names=True)
     assert len(summary["reviewers"][0]["repeats"]) == 2
     peer = next(row for row in summary["pairwise"] if {item["reviewer"] for item in row["reviewers"]} == {"one", "two"})

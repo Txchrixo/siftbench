@@ -16,6 +16,7 @@ from .context import publication_text, validate_context
 from .diff import render_diff, render_file_patch
 from .icons import icon
 from .info import info, info_templates
+from ..stats import percent_interval
 from .issues import issue_rows
 
 
@@ -62,6 +63,13 @@ def _pull_number(url: str | None) -> str:
 
 def _ratio(numerator: int, denominator: int, *, empty: str = "No reference findings") -> str:
     return f"{numerator}/{denominator} ({numerator / denominator:.0%})" if denominator else empty
+
+
+def _with_interval(text: str) -> str:
+    """Add a 95% interval to a "k/n (p%)" reading. Other readings pass through unchanged."""
+    match = re.fullmatch(r"([0-9]+)/([0-9]+) \((.+)\)", text)
+    interval = percent_interval(int(match[1]), int(match[2])) if match else None
+    return f"{match[1]}/{match[2]} ({match[3]}, {interval})" if interval else text
 
 
 def _label(value: str | None) -> str:
@@ -263,7 +271,7 @@ class ReportBuilder:
         if metrics["shared"] and any(int(row[7]) or int(row[8]) for row in rows):
             md.extend(("Scores are provisional while findings still await a verdict.", ""))
         for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if metrics["shared"] else ()):
-            md.append(f"- {provider}: precision {precision}, recall {recall}, {false} false positives, "
+            md.append(f"- {provider}: precision {_with_interval(precision)}, recall {_with_interval(recall)}, {false} false positives, "
                       f"{novel} novel, {context} justified context requests, {duplicates} duplicates, "
                       f"{unresolved} unresolved, {ungraded} ungraded")
         md.extend(["", "## Coverage", ""])
@@ -346,39 +354,76 @@ class ReportBuilder:
     def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int) -> None:
         pairs = bundle["pairs"]
         publications = [pair for pair in pairs if pair.get("publication")]
+        reviewers = [_reviewer(provider) for provider in sorted({pair["provider_id"] for pair in pairs})]
+        repeats = max((pair["repeat_index"] for pair in pairs), default=0) + 1
         prompt = [
-            "Help me interpret this SiftBench comparison of AI code reviewers.", "",
-            f"{completed} of {len(pairs)} review attempts completed across {len(rows)} reviewers.",
-            f"Scores cover {len(shared)} shared case conditions. The report scores only conditions completed by every reviewer, and excludes repeats.",
+            "Help me interpret this SiftBench comparison of AI code reviewers. Treat it as a small pilot, not a ranking.", "",
+            f"Reviewers: {', '.join(reviewers)}.",
+            f"{completed} of {len(pairs)} review attempts completed. Scores cover {len(shared)} shared case conditions "
+            "(pull request plus condition) that every reviewer completed. Repeats are excluded from scores.",
         ]
         if bundle["fixture"]:
             prompt.append("This report uses fixture data and does not measure live reviewer performance.")
         if publications:
             included = sum(pair["status"] == "completed" for pair in publications)
             prompt.append(f"A separate publication audit found {len(publications)} additional publications. This report treats {included} of those as completed attempts.")
+        if shared:
+            titles = {(pair["case_id"], pair["condition"]): _case_title(pair) for pair in pairs if pair["repeat_index"] == 0}
+            prompt.extend(["", "Scored case conditions"])
+            prompt.extend(f"- {titles.get(key, _case_name(key[0]))} · {_label(key[1])}" for key in shared)
+        unfinished = [pair for pair in pairs if pair["status"] != "completed" and pair["repeat_index"] == 0]
+        if unfinished:
+            prompt.extend(["", "Attempts that did not complete (outside the scores)"])
+            prompt.extend(f"- {_reviewer(pair['provider_id'])} · {_case_title(pair)} · {_label(pair['condition'])}: {_review_status(pair)}"
+                          for pair in unfinished)
         prompt.extend(["", "Aggregated scores" if shared else "No shared case conditions are ready to score."])
         for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if shared else ()):
-            prompt.append(f"- {_reviewer(provider)} · Precision {precision} · Reference recall {recall} · Additional findings {novel} · "
+            prompt.append(f"- {_reviewer(provider)} · Precision {_with_interval(precision)} · Reference recall {_with_interval(recall)} · Additional findings {novel} · "
                           f"False positives {false} · Justified context requests {context} · Duplicates {duplicates} · Unresolved {unresolved} · Ungraded {ungraded}")
-        prompt.extend(["", "Precision is the share of scored findings confirmed. Reference recall is the share of expected findings found. "
-                       "Additional findings are verified findings outside the expected set.", "",
-                       "What differences matter in this run, and what conclusions would require more evidence? "
-                       "Use only the figures and scope above. Keep conclusions specific to the cases tested."])
+        prompt.extend(["", "Definitions",
+                       "- Precision: confirmed findings (expected plus additional) divided by findings with a verdict (confirmed plus false positives). "
+                       "Duplicates, context requests and review messages are excluded.",
+                       "- Reference recall: expected findings detected divided by expected findings in a rubric frozen before the reviews.",
+                       "- Additional findings: verified real problems outside the rubric.",
+                       "- 95% CI: a Wilson interval that treats findings as independent. Findings on one pull request are correlated, "
+                       "so the real uncertainty is wider than shown.", "",
+                       "Limits of this benchmark"])
+        prompt.append(f"- Only {len(shared)} scored case conditions" + (", with one run each" if repeats == 1 else f", with up to {repeats} runs each")
+                      + ". With so few cases, one finding can move a percentage by many points, and there are no confidence intervals.")
+        prompt.extend(["- The rubric and public case branches may have been seen by the reviewers beforehand.",
+                       "- Verdicts come from a single grader. There is no inter-annotator agreement.",
+                       "- Reviewers may have run in different campaigns, so timing and cost are not a controlled comparison."])
+        if any(int(row[7]) or int(row[8]) for row in rows):
+            prompt.append("- Some findings are unresolved or ungraded, so the scores are provisional.")
+        if isinstance(bundle.get("analysis"), str) and bundle["analysis"].strip():
+            prompt.extend(["", "Methodology note from the operator", " ".join(bundle["analysis"].split())])
+        prompt.extend(["", "Questions",
+                       "1. Which differences are larger than the noise you would expect from this sample size, if any?",
+                       "2. What can and cannot be concluded about each reviewer from these cases?",
+                       "3. What evidence would make a comparison reliable?", "",
+                       "Use only the information above. Do not invent figures or generalize beyond the cases tested. "
+                       "Say plainly when the data cannot support a conclusion."])
         preview = escape("\n".join(prompt))
         html.append('<dialog id="benchmark-dialog" class="benchmark-dialog" aria-labelledby="benchmark-dialog-title">'
-                    '<div class="ask-heading"><h2 id="benchmark-dialog-title">Ask about this benchmark</h2>'
-                    f'<button id="close-benchmark-dialog" type="button" aria-label="Close" autofocus>{icon("close")}</button></div>'
-                    '<p class="subtle">Copy the aggregate results below, then paste them into the assistant of your choice.</p>'
-                    '<label for="benchmark-prompt">Prompt preview</label>'
+                    '<header class="ask-heading"><div><p class="ask-kind">Assistant prompt</p>'
+                    '<h2 id="benchmark-dialog-title">Ask about this benchmark</h2>'
+                    '<p class="subtle">Share the aggregate results with an assistant to help interpret them.</p></div>'
+                    f'<button id="close-benchmark-dialog" type="button" aria-label="Close" autofocus>{icon("close")}</button></header>'
+                    '<ol class="ask-steps"><li><span class="ask-step" aria-hidden="true">1</span><div class="ask-step-body">'
+                    '<label for="benchmark-prompt">Copy the prompt</label>'
                     f'<textarea id="benchmark-prompt" readonly rows="10" spellcheck="false">{preview}</textarea>'
-                    '<div class="ask-copy"><button id="copy-benchmark-prompt" type="button">Copy prompt</button>'
-                    '<p id="benchmark-copy-status" class="subtle" role="status"></p></div>'
-                    '<div class="ask-destinations" aria-label="Assistants" role="group">')
+                    f'<div class="ask-copy"><button id="copy-benchmark-prompt" type="button">{icon("copy")}Copy prompt</button>'
+                    '<p id="benchmark-copy-status" class="subtle" role="status"></p></div></div></li>'
+                    '<li><span class="ask-step" aria-hidden="true">2</span><div class="ask-step-body">'
+                    '<p class="ask-label" id="ask-destinations-label">Paste it into an assistant</p>'
+                    '<div class="ask-destinations" role="group" aria-labelledby="ask-destinations-label">')
         for brand, name, url in (("openai", "ChatGPT", "https://chatgpt.com/"), ("claude", "Claude", "https://claude.ai/new"),
                                  ("mistral", "Mistral Vibe", "https://chat.mistral.ai/")):
             html.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer">'
                         f'<span class="assistant-mark {brand}" aria-hidden="true"></span>{name}{icon("external")}</a>')
-        html.append('</div></dialog>')
+        html.append('</div></div></li></ol>'
+                    '<p class="ask-privacy subtle">The prompt holds aggregate figures and case titles only. '
+                    'No review text or source code is included.</p></dialog>')
 
     @staticmethod
     def _coverage(html: list[str], groups: dict, providers: list[str], shared: set[tuple[str, str]], *, fixture: bool) -> None:
@@ -453,7 +498,7 @@ class ReportBuilder:
                 *, analysis: str | None = None) -> None:
         html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
         if shared:
-            html.append('<p class="subtle">Scores use only the case conditions completed by every reviewer.</p>')
+            html.append(f'<p class="subtle">Scores use only the case conditions completed by every reviewer.{info("interval")}</p>')
         html.append('</div>')
         if not shared:
             html.append(_report_notice("coverage", "No shared scores yet",
@@ -508,7 +553,10 @@ class ReportBuilder:
             html.append(f'<tr><th scope="row">{_reviewer_display(row[0])}</th>')
             for index in indexes:
                 value, divider, percentage = row[index].partition(" (")
-                cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>'
+                fraction = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
+                interval = percent_interval(int(fraction[1]), int(fraction[2])) if fraction and index in (1, 2) else None
+                spread = f'<span class="score-interval">{interval}</span>' if interval else ""
+                cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>{spread}'
                         if divider else f'<strong>{escape(value)}</strong>' if primary and value.isdigit()
                         else f'<span class="score-empty-text">{escape(value)}</span>' if primary else escape(value))
                 html.append(f'<td class="metric">{cell}</td>')
