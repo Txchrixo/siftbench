@@ -284,6 +284,7 @@ select:hover { border-color: var(--text-secondary); }
   select { align-items: center; }
   select > button { min-width: 0; padding: 0; border: 0; font: inherit; color: inherit; background: none; }
   selectedcontent { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  selectedcontent .option-check { display: none; }
   selectedcontent .option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   select::picker-icon { display: none; }
   ::picker(select) {
@@ -311,7 +312,9 @@ select:hover { border-color: var(--text-secondary); }
   }
   option:hover, option:focus-visible { background: var(--secondary); }
   option:checked { font-weight: 800; }
-  option::checkmark { color: var(--info); }
+  option::checkmark { display: none; }
+  option .option-check { display: inline-flex; flex: 0 0 1rem; visibility: hidden; color: var(--info); }
+  option:checked .option-check { visibility: visible; }
 }
 
 .comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-4); }

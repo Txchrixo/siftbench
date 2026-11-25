@@ -306,6 +306,7 @@ class ReportBuilder:
             if title and case["repeat_index"]:
                 label += f' · Repeat {case["repeat_index"]}'
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
+                        f'<span class="option-check" aria-hidden="true">{icon("check")}</span>'
                         f'{icon("pr")}<span class="option-label">{escape(label)}</span></option>')
         html.append(f'</select>{_SELECT_CHEVRON}</span></label>')
         html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend>'
