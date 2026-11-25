@@ -157,9 +157,11 @@ def _coverage(result: dict) -> str:
             '<div class="analysis-heading"><h2 id="campaign-coverage-title">Pull request coverage</h2>'
             '<p class="subtle">Check which reviews completed and open their original GitHub pull requests.</p></div>',
             '<div class="coverage-filters" hidden><div><label for="coverage-reviewer">Reviewer</label>'
-            '<span class="select-field"><select id="coverage-reviewer">']
+            '<span class="select-field"><select id="coverage-reviewer">'
+            '<button type="button"><selectedcontent></selectedcontent></button>']
     for index, row in enumerate(result["reviewers"]):
-        html.append(f'<option value="{index}">{escape(_reviewer(row["reviewer"]))}</option>')
+        html.append(f'<option value="{index}"><span class="option-check" aria-hidden="true">{icon("check")}</span>'
+                    f'{_reviewer_display(row["reviewer"])}</option>')
     html.append(f'</select>{_SELECT_CHEVRON}</span></div>'
                 '<label class="coverage-filter-check"><input type="checkbox" id="coverage-changes">Only status changes</label></div>'
                 '<p class="visually-hidden" id="coverage-filter-status" role="status"></p>')
