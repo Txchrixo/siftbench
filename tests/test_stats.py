@@ -28,3 +28,18 @@ def test_report_readings_gain_an_interval_only_when_they_are_ratios():
 
     assert _with_interval("3/4 (75%)") == "3/4 (75%, 95% CI 30-95%)"
     assert _with_interval("No reference findings") == "No reference findings"
+
+
+def test_interval_chart_shares_one_axis_and_explains_each_range():
+    from reviewbench.report import _interval_chart, _range_bar
+
+    rows = [("greptile", "6/6 (100%)", "4/4 (100%)"), ("proofline", "10/10 (100%)", "3/4 (75%)"),
+            ("coderabbit", "No scored findings", "No reference findings")]
+    chart = _interval_chart(rows)
+    assert chart.count('class="interval-row"') == 3
+    assert chart.count('data-range-help="') == 4
+    assert 'data-range-range="Likely 30-95%"' in chart
+    assert "No scored findings" in chart
+    assert _interval_chart([("a", "No scored findings", "No reference findings")]) == ""
+    bar = _range_bar(3, 4, title="Proofline · Reference recall", metric="Reference recall")
+    assert 'data-range-detail="3 of 4 expected problems found"' in bar and "Wide range" in bar

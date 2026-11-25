@@ -84,13 +84,13 @@ def _latency(stats: dict) -> _Reading | None:
                     f'<span class="reading-facts">{"".join(facts)}</span>', note)
 
 
-def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False) -> _Reading | None:
+def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False, metric: str = "") -> _Reading | None:
     if not denominator:
         return None
     count = f"{numerator} / {denominator}"
     if not percent:
         return _Reading(count, unit)
-    return _Reading(f"{numerator / denominator:.0%}", count, _range_bar(numerator, denominator),
+    return _Reading(f"{numerator / denominator:.0%}", count, _range_bar(numerator, denominator, metric=metric),
                     percent_interval(numerator, denominator) or "")
 
 
@@ -98,8 +98,8 @@ def _values(metrics: dict, *, paired: bool = False) -> tuple:
     severe = metrics["high_severity"]
     costs = tuple(_Reading(f'{currency} {stats["p50"]:g}', f'Median of {_plural(stats["n"], "attempt")}')
                   for currency, stats in metrics["observed_cost_minor"].items())
-    precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True)
-    recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True)
+    precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True, metric="Precision")
+    recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True, metric="Reference recall")
     grading_pending = any(metrics["verdict_counts"].get(key) for key in ("ungraded", "unresolved"))
     if not metrics["completed"]:
         precision = recall = _MetricState("No matched reviews" if paired else "No completed reviews")

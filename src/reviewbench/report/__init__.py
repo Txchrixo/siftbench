@@ -72,18 +72,83 @@ def _with_interval(text: str) -> str:
     return f"{match[1]}/{match[2]} ({match[3]}, {interval})" if interval else text
 
 
-def _range_bar(successes: int, total: int) -> str:
+_METRIC_NOUNS = {"Precision": "findings confirmed as real problems",
+                 "Reference recall": "expected problems found"}
+
+
+def _range_tip(successes: int, total: int, title: str, metric: str) -> str:
+    """Data attributes read by the shared tooltip script. All values are escaped."""
+    low, high = percent_bounds(successes, total)
+    width = high - low
+    verdict = ("Wide range: too few observations to be sure of this score." if width >= 40
+               else "Moderate range: the score is a rough guide." if width >= 20
+               else "Narrow range: the score is fairly well supported.")
+    values = {
+        "title": title,
+        "main": f"{round(successes / total * 100)}%",
+        "detail": f"{successes} of {total} {_METRIC_NOUNS.get(metric, 'observations')}",
+        "range": f"Likely {low}-{high}%",
+        "help": f"With this many observations, the true rate could plausibly be anywhere in that range. {verdict}",
+    }
+    return " ".join(f'data-range-{key}="{escape(value, quote=True)}"' for key, value in values.items())
+
+
+def _range_bar(successes: int, total: int, *, title: str = "", metric: str = "") -> str:
     """A 0-100% track with the likely range shaded and the observed value marked."""
     bounds = percent_bounds(successes, total)
     if not bounds:
         return ""
     low, high = bounds
     point = min(max(round(successes / total * 100) - 1, 0), 98)
-    return ('<span class="range"><svg class="range-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+    return (f'<span class="range" tabindex="0" {_range_tip(successes, total, title or metric, metric)}>'
+            '<svg class="range-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
             '<rect class="range-track" x="0" y="2.5" width="100" height="1"/>'
             f'<rect class="range-band" x="{low}" y="1" width="{max(high - low, 1)}" height="4" rx="1"/>'
             f'<rect class="range-point" x="{point}" y="0" width="2" height="6"/></svg>'
             f'<span class="range-label">Likely {low}-{high}%<span class="visually-hidden"> (95% confidence interval)</span></span></span>')
+
+
+def _counts(text: str) -> tuple[int, int] | None:
+    match = re.match(r"([0-9]+)/([0-9]+) \(", text)
+    return (int(match[1]), int(match[2])) if match else None
+
+
+def _interval_chart(rows: list[tuple[str, ...]]) -> str:
+    """One shared 0-100% axis per metric, so overlapping ranges are visible across reviewers."""
+    metrics = (("Precision", 1), ("Reference recall", 2))
+    if not any(_counts(row[index]) for row in rows for _, index in metrics):
+        return ""
+    ticks = "".join(f"<li>{value}%</li>" for value in (0, 25, 50, 75, 100))
+    out = ['<figure class="interval-figure" aria-labelledby="interval-title"><figcaption>'
+           f'<h3><span id="interval-title">How sure are these scores?</span>{info("interval")}</h3>'
+           '<p class="subtle">The line is the likely range and the dot is the observed score. '
+           'Where lines overlap, the data cannot tell the reviewers apart.</p></figcaption>'
+           '<div class="interval-grid"><span class="interval-corner"></span>']
+    out.extend(f'<h4 class="interval-heading">{label}</h4>' for label, _ in metrics)
+    for row in rows:
+        out.append(f'<div class="interval-row" data-reviewer="{escape(row[0], quote=True)}"><div class="interval-name">{_reviewer_display(row[0])}</div>')
+        for label, index in metrics:
+            counts = _counts(row[index])
+            if not counts:
+                out.append(f'<div class="interval-cell" data-metric="{label}"><span class="subtle interval-empty">{escape(row[index])}</span></div>')
+                continue
+            low, high = percent_bounds(*counts)
+            score = round(counts[0] / counts[1] * 100)
+            tip = _range_tip(*counts, f"{_reviewer(row[0])} · {label}", label)
+            x = lambda value: 10 + 280 * value / 100
+            out.append(f'<div class="interval-cell" data-metric="{label}"><svg class="interval-plot" viewBox="0 0 300 26" aria-hidden="true" focusable="false">'
+                       + "".join(f'<line class="interval-grid-line" x1="{x(v):g}" x2="{x(v):g}" y1="2" y2="24"/>' for v in (0, 25, 50, 75, 100))
+                       + f'<line class="interval-whisker" x1="{x(low):g}" x2="{x(high):g}" y1="13" y2="13"/>'
+                       f'<line class="interval-cap" x1="{x(low):g}" x2="{x(low):g}" y1="8" y2="18"/>'
+                       f'<line class="interval-cap" x1="{x(high):g}" x2="{x(high):g}" y1="8" y2="18"/>'
+                       f'<circle class="interval-dot" cx="{x(score):g}" cy="13" r="5"/></svg>'
+                       f'<span class="interval-focus" tabindex="0" {tip} aria-label="{escape(f"{_reviewer(row[0])}, {label}: {score}%, likely {low} to {high}%", quote=True)}"></span>'
+                       f'<span class="interval-value">{score}% <span class="subtle">Likely {low}-{high}%</span></span></div>')
+        out.append('</div>')
+    out.append('<span class="interval-corner"></span>'
+               + "".join(f'<ol class="interval-ticks subtle" aria-hidden="true">{ticks}</ol>' for _ in metrics)
+               + '</div></figure>')
+    return "".join(out)
 
 
 def _label(value: str | None) -> str:
@@ -529,6 +594,7 @@ class ReportBuilder:
                                       '<a href="#coverage">Check review coverage</a>'))
         else:
             ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4), primary=True)
+            html.append(_interval_chart(rows))
             if any(int(row[7]) or int(row[8]) for row in rows):
                 html.append('<p class="score-grading-note subtle"><strong>Grading incomplete.</strong> '
                             'Scores reflect verdicts recorded so far. See Additional metrics for outstanding findings.</p>')
@@ -577,7 +643,8 @@ class ReportBuilder:
             for index in indexes:
                 value, divider, percentage = row[index].partition(" (")
                 fraction = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
-                spread = _range_bar(int(fraction[1]), int(fraction[2])) if fraction and index in (1, 2) else ""
+                spread = (_range_bar(int(fraction[1]), int(fraction[2]), title=f"{_reviewer(row[0])} · {columns[indexes.index(index)]}",
+                                     metric=columns[indexes.index(index)]) if fraction and index in (1, 2) else "")
                 cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>{spread}'
                         if divider else f'<strong>{escape(value)}</strong>' if primary and value.isdigit()
                         else f'<span class="score-empty-text">{escape(value)}</span>' if primary else escape(value))

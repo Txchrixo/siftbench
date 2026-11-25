@@ -1,4 +1,53 @@
 (() => {
+  const targets = [...document.querySelectorAll("[data-range-title]")];
+  if (!targets.length) return;
+  const tip = document.createElement("div");
+  tip.className = "data-tip";
+  tip.setAttribute("role", "tooltip");
+  tip.hidden = true;
+  document.body.append(tip);
+  const part = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    node.textContent = text;
+    return node;
+  };
+  const place = (x, y) => {
+    const margin = 8;
+    const left = Math.min(Math.max(x - tip.offsetWidth / 2, margin), window.innerWidth - tip.offsetWidth - margin);
+    const above = y - tip.offsetHeight - 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${above < margin ? y + 22 : above}px`;
+  };
+  const rows = [...document.querySelectorAll(".interval-row")];
+  const focusRow = (target, on) => {
+    const row = target.closest(".interval-row");
+    for (const other of rows) other.classList.toggle("is-dim", on && row !== null && other !== row);
+  };
+  const show = (target, x, y) => {
+    const d = target.dataset;
+    tip.replaceChildren(part("strong", "", d.rangeTitle), part("output", "", d.rangeMain),
+      part("span", "tip-detail", d.rangeDetail), part("span", "tip-range", d.rangeRange), part("span", "tip-help", d.rangeHelp));
+    tip.hidden = false;
+    place(x, y);
+    focusRow(target, true);
+  };
+  const hide = (target) => { tip.hidden = true; if (target) focusRow(target, false); };
+  for (const target of targets) {
+    target.addEventListener("pointerenter", event => show(target, event.clientX, event.clientY));
+    target.addEventListener("pointermove", event => place(event.clientX, event.clientY));
+    target.addEventListener("pointerleave", () => hide(target));
+    target.addEventListener("focus", () => {
+      const box = target.getBoundingClientRect();
+      show(target, box.left + box.width / 2, box.top + box.height / 2);
+    });
+    target.addEventListener("blur", () => hide(target));
+  }
+  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
+  window.addEventListener("scroll", () => hide(), { capture: true, passive: true });
+})();
+
+(() => {
   for (const button of document.querySelectorAll(".sha-copy")) {
     if (!navigator.clipboard) continue;
     button.hidden = false;
