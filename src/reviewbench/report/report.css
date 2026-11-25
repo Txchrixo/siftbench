@@ -351,7 +351,7 @@ select:hover { border-color: var(--text-secondary); }
 .diff-annotations:not(:has([data-diff-provider]:not([hidden]))) { display: none; }
 .split-annotations:not(:has([data-diff-provider]:not([hidden]))) { display: none; }
 .diff-annotations { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--secondary); }
-.case-files :is(.unified-patch, .split-patch) { max-block-size: min(64rem, 88dvh); overflow: auto; }
+.case-files :is(.unified-patch, .split-patch) { overflow-x: auto; }
 .case-files .diff-lines { max-height: none; overflow: visible; }
 .diff-comment { min-inline-size: 0; margin: 0; overflow: clip; border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); font: .875rem/1.55 Manrope, system-ui, sans-serif; }
 .diff-comment > summary { gap: var(--space-2); border-radius: 0; padding-inline: var(--space-2); white-space: nowrap; }
