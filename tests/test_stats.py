@@ -21,3 +21,10 @@ def test_median_interval_is_deterministic_and_needs_enough_data():
     first = median_interval(values)
     assert first == median_interval(list(reversed(values)))
     assert min(values) <= first[0] <= 20.0 <= first[1] <= max(values)
+
+
+def test_report_readings_gain_an_interval_only_when_they_are_ratios():
+    from reviewbench.report import _with_interval
+
+    assert _with_interval("3/4 (75%)") == "3/4 (75%, 95% CI 30-95%)"
+    assert _with_interval("No reference findings") == "No reference findings"

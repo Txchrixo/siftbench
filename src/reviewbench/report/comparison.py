@@ -5,7 +5,7 @@ from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _footer, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
+from . import (_SELECT_CHEVRON, _footer, _with_interval, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
 from .info import info, info_templates
@@ -190,11 +190,11 @@ def operational_metrics(bundle: dict) -> str:
     values = [_values(row["operations"]) for row in reviewers]
     html = ['<section id="operational-metrics" class="analysis-section" aria-labelledby="operations-heading">'
             '<div class="analysis-heading"><h2 id="operations-heading">Operational metrics</h2>'
-            '<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.</p></div>',
+            f'<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.{info("interval")}</p></div>',
             _matrix(headers, values, operational=True), publication_latency(bundle)]
     repeats = [(_reviewer_display(row["reviewer"]), str(repeat["repeat_index"] + 1),
                 f'{repeat["completed"]} / {repeat["planned"]}',
-                _ratio(repeat["matched"], repeat["expected"], empty="No completed reviews" if not repeat["completed"] else "No reference findings"))
+                _with_interval(_ratio(repeat["matched"], repeat["expected"], empty="No completed reviews" if not repeat["completed"] else "No reference findings")))
                for row in reviewers if len(row["repeats"]) > 1 for repeat in row["repeats"]]
     if repeats:
         html.append('<details class="analysis-disclosure"><summary>Results by repetition</summary>'

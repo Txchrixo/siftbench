@@ -90,10 +90,10 @@ _ENTRIES: dict[str, dict] = {
         "lead": 'The range the true rate could plausibly fall in, given <b class="hl">how few findings</b> were observed.',
         "points": (
             ("hl", "Wide means unsure", "5 of 5 correct is 100%, but the interval can still start near 57%."),
-            ("warn", "Likely optimistic", "It treats findings as independent. Findings on one pull request are related, so the real range is wider."),
+            ("warn", "Slightly optimistic", "Each finding counts separately. Findings one reviewer leaves on the same pull request are related, so the range is a little too narrow when a reviewer has several per pull request."),
             ("ok", "Overlap", "When two reviewers' ranges overlap heavily, the data cannot separate them."),
         ),
-        "note": "Timing intervals bootstrap the median and appear from 5 observations.",
+        "note": "Timing intervals resample the observed times around the median and appear from 5 observations.",
     },
     "scored_conditions": {
         "kind": "Campaign total", "tone": "hl", "title": "Scored conditions",

@@ -380,16 +380,25 @@ class ReportBuilder:
         for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if shared else ()):
             prompt.append(f"- {_reviewer(provider)} · Precision {_with_interval(precision)} · Reference recall {_with_interval(recall)} · Additional findings {novel} · "
                           f"False positives {false} · Justified context requests {context} · Duplicates {duplicates} · Unresolved {unresolved} · Ungraded {ungraded}")
+        if shared:
+            spread = []
+            for provider in sorted({pair["provider_id"] for pair in pairs}):
+                counts = [sum(claim["decision"] in {"confirmed_expected", "confirmed_novel", "false_positive"} for claim in pair["claims"])
+                          for pair in pairs if pair["provider_id"] == provider and pair["repeat_index"] == 0
+                          and pair["status"] == "completed" and (pair["case_id"], pair["condition"]) in set(shared)]
+                spread.append(f"- {_reviewer(provider)}: {sum(counts)} findings with a verdict across "
+                              f"{sum(1 for count in counts if count)} pull requests (most on one pull request: {max(counts, default=0)})")
+            prompt.extend(["", "How findings are spread", *spread])
         prompt.extend(["", "Definitions",
                        "- Precision: confirmed findings (expected plus additional) divided by findings with a verdict (confirmed plus false positives). "
                        "Duplicates, context requests and review messages are excluded.",
                        "- Reference recall: expected findings detected divided by expected findings in a rubric frozen before the reviews.",
                        "- Additional findings: verified real problems outside the rubric.",
-                       "- 95% CI: a Wilson interval that treats findings as independent. Findings on one pull request are correlated, "
-                       "so the real uncertainty is wider than shown.", "",
+                       "- 95% CI: a Wilson interval that counts each finding separately. Findings one reviewer leaves on the same "
+                       "pull request are related, so the interval is slightly too narrow when a reviewer has several findings per pull request.", "",
                        "Limits of this benchmark"])
         prompt.append(f"- Only {len(shared)} scored case conditions" + (", with one run each" if repeats == 1 else f", with up to {repeats} runs each")
-                      + ". With so few cases, one finding can move a percentage by many points, and there are no confidence intervals.")
+                      + ". With so few cases, one finding can move a percentage by many points, which is why the 95% intervals are wide.")
         prompt.extend(["- The rubric and public case branches may have been seen by the reviewers beforehand.",
                        "- Verdicts come from a single grader. There is no inter-annotator agreement.",
                        "- Reviewers may have run in different campaigns, so timing and cost are not a controlled comparison."])

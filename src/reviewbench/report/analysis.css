@@ -106,6 +106,7 @@
 .latency-ticks li:first-child { justify-content: start; }
 .latency-ticks li:last-child { justify-content: end; }
 .latency-axis, .latency-context, .latency-key, .latency-reviewer > .subtle { font-size: .8125rem; }
+.latency-interval { font-size: .75rem; font-variant-numeric: tabular-nums; }
 .latency-context { margin-block: var(--space-3); }
 .latency-data ul { margin: 0; padding: 0 var(--space-4); list-style: none; }
 .latency-data li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-4); align-items: baseline; padding-block: var(--space-2); }
