@@ -456,6 +456,21 @@ select:hover { border-color: var(--text-secondary); }
 .case-issues th:first-child { min-inline-size: 12rem; }
 .case-issues [data-issue-provider] { min-inline-size: 8rem; }
 .case-issues [data-issue-provider] .reviewer-name { overflow-wrap: normal; }
+.reference-matrix { margin-block-end: var(--space-6); }
+.reference-matrix :is(th, td) { vertical-align: top; padding-block: var(--space-3); }
+.reference-matrix .scroll { max-block-size: 33rem; }
+.reference-criterion { margin-block-start: 0; }
+.reference-criterion > summary { align-items: baseline; min-height: 0; padding: 0; background: none; color: var(--text-primary); }
+.reference-criterion > summary::before { flex: none; }
+.reference-criterion > summary:hover { text-decoration: underline; }
+.reference-criterion p { margin-block: var(--space-2); color: var(--text-secondary); font-size: .8125rem; font-weight: 500; }
+.reference-criterion + .coverage-case { margin-block-start: var(--space-1); }
+.reference-scroll-hint { display: none; font-size: .8125rem; }
+.reference-state { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-secondary); font-weight: 700; text-decoration: none; }
+.reference-state.detected { color: var(--success); }
+.reference-state.missed { color: var(--error); }
+a.reference-state:hover { text-decoration: underline; }
+.reference-state .report-icon { inline-size: .875rem; block-size: .875rem; flex: none; }
 .issue-scroll-hint { font-size: .8125rem; }
 .issue-description { margin-top: var(--space-1); font-weight: 500; }
 .review-publication > p, .review-publication > .review-copy { padding-inline: var(--space-2); margin-top: var(--space-2); }
@@ -721,6 +736,8 @@ details[open] > :not(summary) { animation: enter 150ms ease-out; }
   .reviewer-chip { gap: var(--space-1); padding-inline: var(--space-1); }
   .case-issues th:first-child { min-inline-size: 7.5rem; max-inline-size: 10rem; }
   .case-issues [data-issue-provider] { min-inline-size: 6.75rem; }
+  .reference-matrix th:first-child { min-inline-size: 10rem; }
+  .reference-scroll-hint { display: block; }
   th, td { padding-inline: var(--space-3); }
   .score-table th, .score-table td { padding-inline: var(--space-2); }
   .main-scores table { table-layout: fixed; }

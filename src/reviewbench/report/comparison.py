@@ -8,6 +8,7 @@ from pathlib import Path
 from . import (_SELECT_CHEVRON, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
+from .latency import publication_latency
 from ..analysis import campaign_metrics
 from ..manifest import canonical_json
 
@@ -180,7 +181,7 @@ def operational_metrics(bundle: dict) -> str:
     html = ['<section id="operational-metrics" class="analysis-section" aria-labelledby="operations-heading">'
             '<div class="analysis-heading"><h2 id="operations-heading">Operational metrics</h2>'
             '<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.</p></div>',
-            _matrix(headers, values, operational=True)]
+            _matrix(headers, values, operational=True), publication_latency(bundle)]
     repeats = [(_reviewer_display(row["reviewer"]), str(repeat["repeat_index"] + 1),
                 f'{repeat["completed"]} / {repeat["planned"]}',
                 _ratio(repeat["matched"], repeat["expected"], empty="No completed reviews" if not repeat["completed"] else "No reference findings"))

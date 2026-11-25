@@ -44,6 +44,10 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
                                       "evidence": [{"type": "test", "text": "Expected ID 42 on page two, got no rows."}]}) + b"\n")
     importer = VerdictImporter(store)
     importer.load(manifest.run_id, rubric, grades, grader_id="first")
+    pending = tmp_path / "pending"
+    assert main(["--state-dir", str(state), "report", "--run-id", "pilot", "--out", str(pending)]) == 0
+    pending_html = (pending / "report.html").read_text(encoding="utf-8")
+    assert 'class="reference-state unrated"' in pending_html and "Grading pending" in pending_html
     with pytest.raises(StoreError, match="two independent graders"):
         importer.load(manifest.run_id, rubric, grades, adjudicator_id="lead")
     importer.load(manifest.run_id, rubric, grades, grader_id="second")
@@ -65,6 +69,9 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert operations.count("<strong>Not measured</strong>") == 1
     assert "Grading incomplete" not in operations
     assert 'aria-label="Metrics by reviewer"' in operations
+    assert 'class="latency-figure"' not in operations
+    assert f'class="reference-state detected" href="#claim-{claim["claim_id"]}"' in html
+    assert 'class="reference-state missed" href="#pair-' in html
     assert "#discussion_r1" in html and "Expected ID 42" in html
     assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html
     assert f'Base <code>{manifest.cases[0].base_sha}</code>' in html

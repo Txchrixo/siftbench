@@ -10,6 +10,7 @@ const grid = document.querySelector(".comparison-grid");
 const panels = [...grid.querySelectorAll("[data-case]")];
 const contexts = [...document.querySelectorAll("[data-context-case]")];
 const issueColumns = [...document.querySelectorAll("[data-issue-provider]")];
+const referenceMatrix = document.querySelector("#reference-matrix");
 const diffComments = [...document.querySelectorAll("[data-diff-provider]")];
 const diffControls = [...document.querySelectorAll("[data-split-diff]")];
 const comparisonView = document.querySelector("#comparison");
@@ -72,6 +73,7 @@ function showComparison(announce = false, requestedClaim = "") {
   fileCount.hidden = currentFiles?.dataset.fileCount === undefined;
   filesUnavailable.hidden = Boolean(currentFiles);
   problemsUnavailable.hidden = Boolean(cases.value && selectedReviewers.length);
+  if (referenceMatrix) referenceMatrix.hidden = !selectedReviewers.length;
   for (const column of issueColumns) column.hidden = !selectedReviewers.includes(column.dataset.issueProvider);
   for (const comment of diffComments) comment.hidden = !selectedReviewers.includes(comment.dataset.diffProvider);
   for (const hint of issueScrollHints) hint.hidden = selectedReviewers.length < 3;

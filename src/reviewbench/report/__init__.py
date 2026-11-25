@@ -532,6 +532,7 @@ class ReportBuilder:
         html.append('<div class="inspection-list"><h2 class="inspection-heading">Finding detail</h2>')
         html.extend(inspections)
         html.append('</div></section><section id="comparison-problems" data-comparison-view="problems" aria-label="Problems">')
+        self._reference_matrix(html, groups, providers)
         for key, group in groups.items():
             self._issues(html, key, group, providers, bundle.get("finding_groups", []))
         html.append('<p id="problems-unavailable" class="empty" hidden>Select a case and at least one reviewer to compare problems.</p></section>')
@@ -548,6 +549,60 @@ class ReportBuilder:
                 html.append(_report_notice("diff", "Different revisions", "The attempts do not share the same base and head. Open each pull request to inspect its own changes."))
                 html.append("</div>")
         html.append('<p id="files-unavailable" class="empty" hidden>No case to show files for.</p></section></section>')
+
+    @staticmethod
+    def _reference_matrix(html: list[str], groups: dict, providers: list[str]) -> None:
+        rows = []
+        for group in groups.values():
+            case = next(iter(group.values()))
+            if case["repeat_index"]:
+                continue
+            references = {item["expected_id"]: item for pair in group.values() for item in pair["expected"]}
+            case_title = (f'{case["case_title"]} · {_label(case["condition"])}'
+                          if case.get("case_title") else _case_display(case))
+            for expected_id, finding in references.items():
+                title = _label(expected_id.replace("-", " "))
+                rows.append(f'<tr><th scope="row"><details class="reference-criterion">'
+                            f'<summary>{escape(title)}</summary><p>{escape(finding["matching_criteria"])}</p></details>'
+                            f'<span class="coverage-case">{escape(case_title)}</span></th>')
+                for provider in providers:
+                    pair = group.get(provider)
+                    state, label, detail, destination = "unrated", "Not evaluated", "", ""
+                    if pair is None:
+                        detail = "No planned attempt"
+                    else:
+                        destination = f'#pair-{pair["pair_id"]}'
+                        if pair["status"] != "completed":
+                            detail = _review_status(pair)
+                        else:
+                            match = next((claim for claim in pair["claims"] if claim["decision"] == "confirmed_expected"
+                                          and claim["expected_id"] == expected_id), None)
+                            if match:
+                                state, label = "detected", "Detected"
+                                destination = f'#claim-{match["claim_id"]}'
+                            elif _grading_pending(pair):
+                                detail = "Grading pending"
+                            elif any(item["expected_id"] == expected_id for item in pair["expected"]):
+                                state, label = "missed", "Missed"
+                            else:
+                                detail = "Reference not loaded"
+                    mark = f'{icon("check") if state == "detected" else icon("close") if state == "missed" else ""}{label}'
+                    context = escape(f'{label} · {_reviewer(provider)} · {title}', quote=True)
+                    content = (f'<a class="reference-state {state}" href="{escape(destination, quote=True)}" aria-label="{context}">{mark}</a>' if destination
+                               else f'<span class="reference-state {state}">{mark}</span>')
+                    rows.append(f'<td data-issue-provider="{escape(provider, quote=True)}">{content}'
+                                + (f'<small class="coverage-case">{detail}</small>' if detail else "") + "</td>")
+                rows.append("</tr>")
+        if not rows:
+            return
+        html.append('<div id="reference-matrix" class="case-issues reference-matrix"><h3>Expected findings across cases</h3>'
+                    '<p class="subtle">First attempt per PR and condition. Select a result to open its evidence.</p>'
+                    '<p class="subtle reference-scroll-hint">Scroll the table to see more reviewers.</p>'
+                    '<div class="scroll" tabindex="0" role="region" aria-label="Expected finding detection by reviewer">'
+                    '<table><thead><tr><th scope="col">Expected finding</th>')
+        for provider in providers:
+            html.append(f'<th scope="col" data-issue-provider="{escape(provider, quote=True)}">{_reviewer_display(provider)}</th>')
+        html.extend(("</tr></thead><tbody>", *rows, "</tbody></table></div></div>"))
 
     @staticmethod
     def _files(html: list[str], key: str, changes: list[dict] | None, group: dict, *, pinned: bool) -> None:

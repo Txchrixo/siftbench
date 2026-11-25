@@ -75,7 +75,33 @@
 .recorded-config dl { margin-block-start: var(--space-2); }
 .recorded-config dl > div { display: grid; gap: var(--space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-block: var(--space-1); font-size: .875rem; }
 
+.latency-figure { margin: var(--space-4) 0 0; min-inline-size: 0; padding: var(--panel-inset); border-radius: .5rem; background: var(--secondary); }
+.latency-figure figcaption { display: grid; gap: var(--space-1); margin-block-end: var(--space-3); }
+.latency-key { display: flex; align-items: center; gap: var(--space-2); margin-block-start: var(--space-2); }
+.latency-key span { block-size: .875rem; border-inline-start: 2px dashed var(--info); }
+.latency-row { display: grid; grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr); gap: var(--space-1) var(--space-4); align-items: center; padding-block: var(--space-1); }
+.latency-row + .latency-row { border-block-start: 1px solid var(--border); }
+.latency-reviewer { display: grid; gap: var(--space-1); }
+.latency-track { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
+.latency-track line, .latency-dot { vector-effect: non-scaling-stroke; }
+.latency-gridline { stroke: var(--border); }
+.latency-median { stroke: var(--info); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.latency-dot { fill: var(--info); stroke: var(--secondary); }
+.latency-hit { fill: transparent; }
+.latency-point:is(:hover, :focus-visible) .latency-dot { fill: var(--text-primary); stroke: var(--info); stroke-width: 2; }
+.latency-ticks { display: flex; justify-content: space-between; align-items: center; margin: 0; padding: 0 1.7857%; list-style: none; }
+.latency-ticks li { width: 0; display: grid; justify-content: center; }
+.latency-ticks li:first-child { justify-content: start; }
+.latency-ticks li:last-child { justify-content: end; }
+.latency-axis, .latency-context, .latency-key, .latency-reviewer > .subtle { font-size: .8125rem; }
+.latency-context { margin-block: var(--space-3); }
+.latency-data ul { display: grid; gap: var(--space-2); margin: 0; padding: var(--space-3) var(--space-4); list-style: none; }
+.latency-data li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-1) var(--space-2); }
+
 @media (max-width: 40rem) {
+  .latency-row { grid-template-columns: minmax(0, 1fr); }
+  .latency-reviewer { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); }
+  .latency-axis > span { order: 1; justify-self: end; }
   .metric-scroll-hint { display: block; }
   .pairwise-table :is(th, td) { min-inline-size: 0; padding-inline: var(--space-2); overflow-wrap: anywhere; }
   .sample-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

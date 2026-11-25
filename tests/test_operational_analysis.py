@@ -59,6 +59,9 @@ def test_operational_metrics_distinguish_no_completions_from_partial_grading(man
     assert "<strong>1 false positive</strong><small>1 of 2 completed PRs graded</small>" in report
     assert "<strong>No completed reviews</strong>" in report
     assert "Grading incomplete" not in report
+    assert report.count('class="latency-point"') == 2
+    assert report.count('class="latency-median"') == 1
+    assert "15 s median · n=2" in report
     reviewers = campaign_metrics(bundle, reviewer_names=True)["reviewers"]
     assert [row["operations"]["metric_availability"]["false_positives_per_graded_pr"] for row in reviewers] == [
         "partially_graded", "no_completed_reviews"]

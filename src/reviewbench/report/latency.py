@@ -1,0 +1,100 @@
+"""Offline plot of observed publication latency with links to the original evidence."""
+
+from collections import defaultdict
+from html import escape
+from math import ceil, floor, log10
+import re
+from statistics import median
+
+from ..analysis import _elapsed
+from . import _case_display, _link, _reviewer, _reviewer_display
+
+
+_LEFT, _RIGHT = 10, 550
+
+
+def _tick_step(maximum: float) -> float:
+    target = max(1, maximum / 4)
+    magnitude = 10 ** floor(log10(target))
+    return next(factor * magnitude for factor in (1, 2, 5, 10) if factor * magnitude >= target)
+
+
+def _plot_row(samples: list[tuple[float, dict]], limit: float, ticks: list[float], fixture: bool) -> str:
+    def x(seconds):
+        return _LEFT + (_RIGHT - _LEFT) * seconds / limit
+
+    lanes: list[float] = []
+    positions = []
+    for seconds, pair in samples:
+        position = x(seconds)
+        lane = next((index for index, last in enumerate(lanes) if position - last >= 13), len(lanes))
+        if lane == len(lanes):
+            lanes.append(position)
+        else:
+            lanes[lane] = position
+        positions.append((seconds, pair, lane))
+    height = max(34, 22 + len(lanes) * 13)
+    grid = ''.join(f'<line class="latency-gridline" x1="{x(tick):g}" x2="{x(tick):g}" y1="4" y2="{height - 4}"/>'
+                   for tick in ticks)
+    middle = x(median(seconds for seconds, _ in samples))
+    marks = [f'<line class="latency-median" x1="{middle:g}" x2="{middle:g}" y1="4" y2="{height - 4}"/>']
+    for seconds, pair, lane in positions:
+        case = _case_display(pair)
+        title = pair.get("case_title")
+        description = f'{_reviewer(pair["provider_id"])} · {title + " · " if title else ""}{case} · {seconds:g} seconds'
+        source = _evidence_link(pair, fixture)
+        marks.append(f'<a class="latency-point" href="{source}" aria-label="{escape(description, quote=True)}">'
+                     f'<title>{escape(description)}</title>'
+                     f'<circle class="latency-hit" cx="{x(seconds):g}" cy="{17 + lane * 13}" r="10"/>'
+                     f'<circle class="latency-dot" cx="{x(seconds):g}" cy="{17 + lane * 13}" r="4.5"/></a>')
+    return (f'<svg class="latency-track" viewBox="0 0 560 {height}" aria-label="Individual review times">'
+            f'{grid}{"".join(marks)}</svg>')
+
+
+def _evidence_link(pair: dict, fixture: bool) -> str:
+    if not fixture:
+        if check := _link(pair.get("capture_check_url")) or _link((pair.get("publication") or {}).get("check_url")):
+            return check
+        if pr := _link(pair.get("pr_url")):
+            if signal := re.fullmatch(r"review:([0-9]+)", pair.get("capture_signal") or ""):
+                return f'{pr.split("#", 1)[0]}#pullrequestreview-{signal[1]}'
+            return pr
+    return f'#pair-{escape(pair["pair_id"], quote=True)}'
+
+
+def publication_latency(bundle: dict) -> str:
+    by_provider = defaultdict(list)
+    for pair in bundle["pairs"]:
+        if pair["status"] == "completed":
+            timing = pair.get("timing", {})
+            if (duration := _elapsed(timing.get("review_started_at"), timing.get("published_at"))) is not None:
+                by_provider[pair["provider_id"]].append((duration, pair))
+    if not by_provider:
+        return ""
+
+    maximum = max(seconds for samples in by_provider.values() for seconds, _ in samples)
+    step = _tick_step(maximum)
+    intervals = max(1, ceil(maximum / step))
+    ticks = [step * index for index in range(intervals + 1)]
+    axis = "".join(f'<li>{tick:g}</li>' for tick in ticks)
+    html = ['<figure class="latency-figure" aria-labelledby="latency-title"><figcaption>'
+            '<h3 id="latency-title">Review publication times</h3>'
+            '<p class="subtle">Each dot is an observed review. Select it to open the original evidence.</p>'
+            '<p class="latency-key subtle"><span aria-hidden="true"></span>Median</p></figcaption>']
+    for provider, samples in sorted(by_provider.items()):
+        samples.sort(key=lambda row: (row[0], row[1]["pair_id"]))
+        value = median(seconds for seconds, _ in samples)
+        html.append(f'<div class="latency-row"><div class="latency-reviewer">{_reviewer_display(provider)}'
+                    f'<span class="subtle">{value:g} s median · n={len(samples)}</span></div>'
+                    f'{_plot_row(samples, ticks[-1], ticks, bundle["fixture"])}</div>')
+    html.extend(('<div class="latency-row latency-axis"><span class="subtle">Elapsed seconds</span>'
+                 f'<ol class="latency-ticks subtle" aria-hidden="true">{axis}</ol></div>',
+                 '<p class="latency-context subtle">Measured from the recorded review start to the verified publication signal.'
+                 + (' The source campaigns ran separately.' if len(bundle.get("source_campaigns", [])) > 1 else '')
+                 + '</p><details class="analysis-disclosure latency-data"><summary>Review times and sources</summary><ul>'))
+    for provider, samples in sorted(by_provider.items()):
+        for seconds, pair in samples:
+            title = escape(pair.get("case_title") or _case_display(pair))
+            html.append(f'<li><a href="{_evidence_link(pair, bundle["fixture"])}">{title}</a>'
+                        f'<span class="subtle">{escape(_reviewer(provider))} · {escape(_case_display(pair))} · {seconds:g} s</span></li>')
+    return "".join(html) + "</ul></details></figure>"
