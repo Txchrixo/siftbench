@@ -99,6 +99,8 @@ reviewbench resume --run-id pagination-live-pilot-v2 --execute
 
 The default CI workflow uses fixtures and read-only workflow permissions. The optional `doctor --github` command checks privacy and pinned commits without creating branches, opening PRs, or requesting reviews.
 
+For repeated campaigns, independent grading, publication audits, and release installation, see the [operations guide](docs/operations.md). It also covers paired comparisons and the allowlisted public export.
+
 Keep the run store and raw artifacts private. The HTML and JSON exports still include original reviewer text and evidence excerpts. Read the bundle and check who can open its source links before sharing it. Once the pilot is archived, close the experimental PRs without merging and remove reviewer access when those repositories are no longer needed. Retain the original PRs when a report links to them.
 
 ## Add a reviewer

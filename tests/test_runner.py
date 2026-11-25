@@ -3,7 +3,7 @@ from dataclasses import replace
 import pytest
 
 from reviewbench.fixture import FixtureTransport
-from reviewbench.github import RateLimited
+from reviewbench.github import RateLimited, ReviewObservation
 from reviewbench.manifest import ManifestLoader
 from reviewbench.runner import CampaignRunner
 from reviewbench.store import RunStore, StoreError
@@ -55,9 +55,9 @@ def test_rate_limit_and_head_mismatch_do_not_score(tmp_path, manifest_data):
         attempts = 0
 
         def find_pull(self, pair, head_ref):
-            if pair.target.provider_id == "one":
+            if pair.target.provider_id == "one" and not self.attempts:
                 self.attempts += 1
-                raise RateLimited(55)
+                raise RateLimited(70)
             return super().find_pull(pair, head_ref)
 
         def create_pull(self, pair, head_ref):
@@ -73,10 +73,54 @@ def test_rate_limit_and_head_mismatch_do_not_score(tmp_path, manifest_data):
     current[0] = 150
     runner.step(manifest)
     assert transport.attempts == 1
-    current[0] = 161
+    current[0] = 171
     final = runner.step(manifest)
-    assert [pair["status"] for pair in final] == ["timed_out", "timed_out"]
+    assert [pair["status"] for pair in final] == ["invalid_input", "invalid_input"]
     assert transport.attempts == 1
+
+
+def test_on_time_publication_survives_settling_and_restart(tmp_path, manifest_data):
+    class SettlingTransport(FixtureTransport):
+        published = True
+
+        def observe(self, pair, pr, started_at):
+            if self.published:
+                return replace(super().observe(pair, pr, started_at), published_at=159)
+            return ReviewObservation("pending", None, (), {})
+
+    manifest_data["settling_seconds"] = 10
+    manifest = ManifestLoader.parse(manifest_data)
+    transport = SettlingTransport({"one": ["A finding"]})
+    store = RunStore(tmp_path)
+    now = [100]
+    runner = CampaignRunner(store, transport, clock=lambda: now[0])
+    transport.published = False
+    runner.step(manifest)
+    now[0] = 159
+    transport.published = True
+    assert all(row["status"] == "awaiting_review" for row in runner.step(manifest))
+    transport.published = False
+    now[0] = 171
+    resumed = CampaignRunner(RunStore(tmp_path), transport, clock=lambda: now[0]).step(manifest)
+    assert all(row["status"] == "completed" for row in resumed)
+    assert len(transport.pulls) == 2
+
+
+@pytest.mark.parametrize("published, expected", [(159, "completed"), (161, "timed_out")])
+def test_last_poll_uses_source_publication_time(tmp_path, manifest_data, published, expected):
+    class LatePoll(FixtureTransport):
+        def observe(self, pair, pr, started_at):
+            if now[0] < published:
+                return ReviewObservation("pending", None, (), {})
+            return replace(super().observe(pair, pr, started_at), published_at=published)
+
+    manifest_data["settling_seconds"] = 0
+    now = [100]
+    manifest = ManifestLoader.parse(manifest_data)
+    runner = CampaignRunner(RunStore(tmp_path), LatePoll({}), clock=lambda: now[0])
+    runner.step(manifest)
+    now[0] = 165
+    assert all(row["status"] == expected for row in runner.step(manifest))
 
 
 def test_changed_head_is_excluded_from_capture(tmp_path, manifest_data):

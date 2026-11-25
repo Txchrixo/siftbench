@@ -41,6 +41,9 @@ class PullRequest:
     head_ref: str
     base_sha: str
     head_sha: str
+    created_at: float | None = None
+    title: str | None = None
+    body: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,7 @@ class ReviewObservation:
     signal: str | None
     claims: tuple[tuple[str, str, str | None, str], ...]
     raw: object
+    published_at: float | None = None
 
 
 class Transport(Protocol):
@@ -64,6 +68,8 @@ def verify_pull(pair: ExperimentPair, pr: PullRequest, head_ref: str) -> None:
         pair.target.repository, case.base_ref, head_ref, case.base_sha, case.head_sha
     ):
         raise InvalidInput("Pull request does not match the pinned repository, refs, and SHAs")
+    if pr.title is not None and pr.title != case.title or pr.body is not None and pr.body != case.body:
+        raise InvalidInput("Pull request does not match the pinned title and description")
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -187,6 +193,8 @@ class GitHubClient:
 
     @staticmethod
     def _parse_pull(data: dict, repository: str) -> PullRequest:
+        from .providers import _timestamp
+
         try:
             base, head = data["base"], data["head"]
             number = data["number"]
@@ -194,7 +202,8 @@ class GitHubClient:
                     or head["repo"]["full_name"].lower() != repository):
                 raise InvalidInput("Pull request references another repository")
             return PullRequest(number, f"https://github.com/{repository}/pull/{number}", repository,
-                               base["ref"], head["ref"], base["sha"], head["sha"])
+                               base["ref"], head["ref"], base["sha"], head["sha"], _timestamp(data.get("created_at")),
+                               data.get("title"), data.get("body"))
         except (KeyError, TypeError, AttributeError) as error:
             raise RemoteError("Unexpected GitHub pull request format") from error
 
@@ -265,13 +274,18 @@ class GitHubClient:
     def observe(self, pair: ExperimentPair, pr: PullRequest, started_at: float) -> ReviewObservation:
         from .providers import ReviewerAdapter
 
+        reviews, comments, summaries, checks = self.review_sources(pr, include_checks=bool(pair.target.completion_check))
+        return ReviewerAdapter(pair.target).observe(pr, started_at, reviews, comments, summaries, checks,
+                                                   captured_at=time.time())
+
+    def review_sources(self, pr: PullRequest, *, include_checks: bool = True) -> tuple[list[dict], ...]:
+        """Retrieve original publication surfaces using only allowlisted GET routes."""
         path = self._repository(pr.repository)
         pull_path = f"{path}/pulls/{pr.number}"
         reviews = self._list(pull_path + "/reviews")
         comments = self._list(pull_path + "/comments")
         summaries, checks = [], []
-        if pair.target.completion_check:
+        if include_checks:
             summaries = self._list(f"{path}/issues/{pr.number}/comments")
             checks = self._list(f"{path}/commits/{pr.head_sha}/check-runs", {"filter": "all"}, object_key="check_runs")
-        return ReviewerAdapter(pair.target).observe(pr, started_at, reviews, comments, summaries, checks,
-                                                   captured_at=time.time())
+        return reviews, comments, summaries, checks

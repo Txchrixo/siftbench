@@ -4,7 +4,7 @@ import pytest
 
 from reviewbench.cli import main
 from reviewbench.fixture import FixtureTransport
-from reviewbench.grading import ScoreCalculator, VerdictImporter, build_bundle, claims_for_grading
+from reviewbench.grading import ScoreCalculator, VerdictImporter, assessments_for_run, build_bundle, claims_for_grading
 from reviewbench.manifest import ManifestLoader, canonical_json, digest
 from reviewbench.runner import CampaignRunner
 from reviewbench.store import RunStore, StoreError
@@ -31,10 +31,18 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     grades.write_bytes(canonical_json({"claim_id": claim["claim_id"], "decision": "confirmed_expected",
                                       "expected_id": "same-time", "rationale": "Only a timestamp is compared.",
                                       "evidence": [{"type": "test", "text": "Expected ID 42 on page two, got no rows."}]}) + b"\n")
-    VerdictImporter(store).load(manifest.run_id, rubric, grades)
-    VerdictImporter(store).load(manifest.run_id, rubric, grades)
+    importer = VerdictImporter(store)
+    importer.load(manifest.run_id, rubric, grades, grader_id="first")
+    with pytest.raises(StoreError, match="two independent graders"):
+        importer.load(manifest.run_id, rubric, grades, adjudicator_id="lead")
+    importer.load(manifest.run_id, rubric, grades, grader_id="second")
+    assert len(assessments_for_run(store, manifest.run_id)) == 2
+    assert build_bundle(store, manifest.run_id)["pairs"][0]["claims"][0]["decision"] is None
+    importer.load(manifest.run_id, rubric, grades, adjudicator_id="lead")
+    importer.load(manifest.run_id, rubric, grades, adjudicator_id="lead")
     bundle = build_bundle(store, manifest.run_id)
     assert bundle["pairs"][0]["claims"][0]["revision"] == 1
+    assert bundle["pairs"][0]["claims"][0]["adjudicator_id"] == "lead"
     results = ScoreCalculator.calculate(bundle)["providers"]
     assert (results["one"]["matched"], results["one"]["expected"], results["two"]["matched"]) == (1, 1, 0)
 
@@ -50,6 +58,14 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert "A row with the same timestamp" not in preview and "Expected ID 42" not in preview
     assert manifest.cases[0].head_sha not in preview and "https://" not in preview
     assert json.loads((first / "results.json").read_bytes()) == bundle
+    sharing = tmp_path / "public.json"
+    assert main(["export", "--bundle", str(first / "results.json"), "--out", str(sharing), "--visibility", "public"]) == 0
+    public = sharing.read_text(encoding="utf-8")
+    assert "https://" not in public and "A row with the same timestamp" not in public and "Expected ID 42" not in public
+    assert "adjudicator" not in public and "reviewer-1" in public and manifest.cases[0].head_sha not in public
+    assert main(["compare-runs", "--before", str(first / "results.json"), "--after", str(first / "results.json"),
+                 "--out", str(tmp_path / "compare")]) == 0
+    assert (tmp_path / "compare" / "comparison.html").read_text(encoding="utf-8").count("1 / 1 matched completions") == 2
     replay = tmp_path / "replay"
     assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0
     for name in ("report.html", "summary.md", "results.json"):

@@ -92,6 +92,11 @@ def test_summary_only_completion_requires_check_on_same_pr_and_head(manifest_dat
     assert observations.state == "completed"
     assert observations.signal == "check:12"
     assert observations.claims == (("issue:20", summary["html_url"], None, summary["body"]),)
+    fallback = ReviewerAdapter(replace(target, completion_policy="review_or_check"))
+    review = {"id": 21, "submitted_at": timestamp, "state": "COMMENTED", "body": "",
+              "user": {"login": target.publisher}, "commit_id": pr.head_sha}
+    assert fallback.observe(pr, 100, [review], [], [], [], captured_at=110).signal == "review:21"
+    assert fallback.observe(pr, 100, [], [], [], [check], captured_at=110).signal == "check:12"
 
 
 def test_live_preflight_only_reads_and_rejects_a_changed_base(manifest_data):

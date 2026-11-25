@@ -2,12 +2,13 @@ import base64
 import hashlib
 import json
 import re
+from math import isfinite
 from html import escape
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from ..grading import DECISIONS, EVIDENCE_TYPES, ScoreCalculator
+from ..grading import DECISIONS, EVIDENCE_TYPES, SEVERITIES, ScoreCalculator
 from ..manifest import canonical_json, digest, identifier
 from ..store import StoreError
 from .comment import blocks, inline, review_text
@@ -75,6 +76,22 @@ def _validate(bundle: dict) -> None:
                 identifier(pair[field], field)
             if "case_title" in pair and not isinstance(pair["case_title"], str):
                 raise StoreError("Invalid case title")
+            if "input_digest" in pair and not _DIGEST.fullmatch(pair["input_digest"]):
+                raise StoreError("Invalid pinned input digest")
+            if "timing" in pair:
+                timing = pair["timing"]
+                allowed = {"started_at", "review_started_at", "deadline_at", "first_completion_at", "frozen_at", "published_at"}
+                if not isinstance(timing, dict) or not timing.keys() <= allowed or any(
+                    value is not None and (type(value) not in (int, float) or not isfinite(value) or value < 0)
+                    for value in timing.values()
+                ):
+                    raise StoreError("Invalid attempt timing")
+            if "cost" in pair:
+                cost = pair["cost"]
+                if (set(cost) != {"currency", "amount_minor", "source_digest"} or not re.fullmatch(r"[A-Z]{3}", cost["currency"])
+                        or type(cost["amount_minor"]) is not int or not 0 <= cost["amount_minor"] <= 10 ** 12
+                        or not _DIGEST.fullmatch(cost["source_digest"])):
+                    raise StoreError("Invalid measured cost")
             if (type(pair["repeat_index"]) is not int or pair["repeat_index"] < 0 or pair["status"] not in _STATES
                     or not _DIGEST.fullmatch(pair["pair_id"]) or key in seen_pairs or pair["pair_id"] in seen_pair_ids):
                 raise StoreError("Invalid or duplicate results pair")
@@ -107,12 +124,17 @@ def _validate(bundle: dict) -> None:
                     raise StoreError("Invalid captured diff hunk")
                 if "diff_side" in claim and claim["diff_side"] not in ("LEFT", "RIGHT"):
                     raise StoreError("Invalid captured diff side")
+                published = claim.get("published_at")
+                if published is not None and (type(published) not in (int, float) or not isfinite(published) or published < 0):
+                    raise StoreError("Invalid claim publication time")
                 seen_claims.add(claim["claim_id"])
                 for piece in claim["evidence"]:
                     if piece["type"] not in EVIDENCE_TYPES or digest(piece["text"].encode()) != piece["digest"]:
                         raise StoreError("Invalid evidence or digest mismatch")
             if any(not isinstance(finding["matching_criteria"], str) for finding in pair["expected"]):
                 raise StoreError("Expected findings need text criteria")
+            if any("severity" in finding and finding["severity"] not in SEVERITIES for finding in pair["expected"]):
+                raise StoreError("Invalid reference severity")
         validate_context(bundle)
     except (AttributeError, KeyError, TypeError) as error:
         raise StoreError("Invalid results bundle structure") from error
@@ -227,6 +249,8 @@ class ReportBuilder:
         if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
             html.append(f'<p class="analysis-note"><strong>Analysis note</strong> {escape(bundle["analysis"])}</p>')
         self._scores(html, metrics["shared"], rows, case_titles)
+        if rows and (bundle.get("operational_schema_version") == 1 or any("cost" in pair for pair in bundle["pairs"])):
+            self._operations(html, bundle)
         html.append('</section>')
         self._coverage(html, groups, providers, set(metrics["shared"]), fixture=bundle["fixture"])
         self._comparison(html, groups, providers, bundle)
@@ -240,6 +264,42 @@ class ReportBuilder:
         (output / "report.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
         (output / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
         (output / "OFL-Manrope.txt").write_bytes(root.joinpath("OFL-Manrope.txt").read_bytes())
+
+    @staticmethod
+    def _operations(html: list[str], bundle: dict) -> None:
+        from ..analysis import campaign_metrics
+        from .comparison import metric_rows
+
+        metrics = campaign_metrics(bundle, reviewer_names=True)
+        html.append('<section id="operational-metrics"><h2>Operational metrics</h2>'
+                    '<p class="subtle">Covers all planned attempts, including repetitions. Latency uses observed publication timestamps. Cost requires measured billing evidence.</p>')
+        for row in metrics["reviewers"]:
+            html.append(f'<details class="review-publication"><summary>{_reviewer_display(row["reviewer"])}</summary>')
+            html.append('<dl class="metric-guide">')
+            for label, value in metric_rows(row["operations"])[2:]:
+                html.append(f'<div><dt>{label}</dt><dd>{escape(value)}</dd></div>')
+            if len(row["repeats"]) > 1:
+                for repeat in row["repeats"]:
+                    label = f'Repeat {repeat["repeat_index"] + 1}'
+                    value = (f'{repeat["completed"]}/{repeat["planned"]} completed · '
+                             f'{_ratio(repeat["matched"], repeat["expected"])} reference recall')
+                    html.append(f'<div><dt>{label}</dt><dd>{escape(value)}</dd></div>')
+            html.append('</dl></details>')
+        if metrics["pairwise"]:
+            html.append('<details class="review-publication"><summary>Pairwise scores on matched samples</summary>'
+                        '<div class="scroll" tabindex="0" role="region" aria-label="Pairwise scores"><table><thead><tr>'
+                        '<th scope="col">Reviewer pair</th><th scope="col">Matched samples</th>'
+                        '<th scope="col">Precision</th><th scope="col">Reference recall</th></tr></thead><tbody>')
+            for row in metrics["pairwise"]:
+                reviewers = row["reviewers"]
+                names = " / ".join(_reviewer(item["reviewer"]) for item in reviewers)
+                scores = [dict(metric_rows(item["metrics"])) for item in reviewers]
+                precision = " / ".join(score["Precision"] for score in scores)
+                recall = " / ".join(score["Reference recall"] for score in scores)
+                html.append(f'<tr><th scope="row">{escape(names)}</th><td>{row["completed_in_both"]}/{row["planned_in_both"]}</td>'
+                            f'<td>{escape(precision)}</td><td>{escape(recall)}</td></tr>')
+            html.append('</tbody></table></div></details>')
+        html.append('</section>')
 
     @staticmethod
     def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int) -> None:

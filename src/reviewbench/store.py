@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS attempt (
     attempt_id TEXT PRIMARY KEY, pair_id TEXT NOT NULL REFERENCES experiment_pair,
     attempt_number INTEGER NOT NULL, status TEXT NOT NULL, repository TEXT NOT NULL,
     pr_number INTEGER, pr_url TEXT, started_at REAL NOT NULL, deadline_at REAL NOT NULL,
-    first_completion_at REAL, next_poll_at REAL, reason TEXT, manual_trigger_at REAL,
+    first_completion_at REAL, next_poll_at REAL, reason TEXT, manual_trigger_at REAL, review_started_at REAL,
     UNIQUE (pair_id, attempt_number), UNIQUE (repository, pr_number)
 );
 CREATE TABLE IF NOT EXISTS attempt_event (
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS finding_claim (
 );
 CREATE TABLE IF NOT EXISTS expected_finding (
     expected_id TEXT NOT NULL, variant_id TEXT NOT NULL REFERENCES case_variant,
-    matching_criteria TEXT NOT NULL, PRIMARY KEY (variant_id, expected_id)
+    matching_criteria TEXT NOT NULL, severity TEXT, PRIMARY KEY (variant_id, expected_id)
 );
 CREATE TABLE IF NOT EXISTS verdict (
     verdict_id TEXT PRIMARY KEY, claim_id TEXT NOT NULL REFERENCES finding_claim,
@@ -79,7 +79,18 @@ CREATE TABLE IF NOT EXISTS verdict_evidence (
 CREATE TABLE IF NOT EXISTS campaign_throttle (
     run_id TEXT PRIMARY KEY REFERENCES campaign, retry_at REAL NOT NULL
 );
-PRAGMA user_version = 3;
+CREATE TABLE IF NOT EXISTS review_candidate (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempt, artifact_id TEXT NOT NULL REFERENCES artifact
+);
+CREATE TABLE IF NOT EXISTS assessment (
+    claim_id TEXT NOT NULL REFERENCES finding_claim, grader_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    decision TEXT NOT NULL, expected_id TEXT, rationale TEXT NOT NULL, evidence_ids TEXT NOT NULL,
+    PRIMARY KEY (claim_id, grader_id, revision)
+);
+CREATE TABLE IF NOT EXISTS adjudication (
+    verdict_id TEXT PRIMARY KEY REFERENCES verdict, adjudicator_id TEXT NOT NULL
+);
+PRAGMA user_version = 4;
 """
 
 _MIGRATE_1_TO_2 = """
@@ -97,6 +108,25 @@ INSERT INTO campaign_throttle
     SELECT p.run_id, max(a.next_poll_at) FROM attempt a JOIN experiment_pair p USING (pair_id)
     WHERE a.reason = 'GitHub API rate limit' AND a.next_poll_at IS NOT NULL GROUP BY p.run_id;
 PRAGMA user_version = 3;
+"""
+
+_MIGRATE_3_TO_4 = """
+ALTER TABLE attempt ADD COLUMN review_started_at REAL;
+ALTER TABLE expected_finding ADD COLUMN severity TEXT;
+UPDATE attempt SET review_started_at = COALESCE(manual_trigger_at, started_at)
+    WHERE status IN ('awaiting_review', 'completed') AND pr_number IS NOT NULL;
+CREATE TABLE review_candidate (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempt, artifact_id TEXT NOT NULL REFERENCES artifact
+);
+CREATE TABLE assessment (
+    claim_id TEXT NOT NULL REFERENCES finding_claim, grader_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    decision TEXT NOT NULL, expected_id TEXT, rationale TEXT NOT NULL, evidence_ids TEXT NOT NULL,
+    PRIMARY KEY (claim_id, grader_id, revision)
+);
+CREATE TABLE adjudication (
+    verdict_id TEXT PRIMARY KEY REFERENCES verdict, adjudicator_id TEXT NOT NULL
+);
+PRAGMA user_version = 4;
 """
 
 
@@ -151,11 +181,12 @@ class RunStore:
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version != 3:
+            if version != 4:
                 with connection:
                     connection.execute("BEGIN IMMEDIATE")
                     version = connection.execute("PRAGMA user_version").fetchone()[0]
-                    migrations = {0: _SCHEMA, 1: _MIGRATE_1_TO_2 + _MIGRATE_2_TO_3, 2: _MIGRATE_2_TO_3, 3: ""}
+                    migrations = {0: _SCHEMA, 1: _MIGRATE_1_TO_2 + _MIGRATE_2_TO_3 + _MIGRATE_3_TO_4,
+                                  2: _MIGRATE_2_TO_3 + _MIGRATE_3_TO_4, 3: _MIGRATE_3_TO_4, 4: ""}
                     if version not in migrations:
                         raise StoreError(f"Unsupported database schema version: {version}")
                     for statement in migrations[version].split(";"):
@@ -274,19 +305,30 @@ class RunStore:
             )
             return result.rowcount == 1
 
-    def attach_pr(self, attempt_id: str, number: int, url: str, status: str, now: float) -> None:
+    def attach_pr(self, attempt_id: str, number: int, url: str, status: str, now: float,
+                  timeout: int, created_at: float | None = None) -> None:
+        started = (created_at if created_at is not None else now) if status == "awaiting_review" else None
         with self.connect() as db:
-            db.execute("UPDATE attempt SET pr_number = ?, pr_url = ?, status = ?, reason = NULL WHERE attempt_id = ?",
-                       (number, url, status, attempt_id))
+            db.execute("UPDATE attempt SET pr_number = ?, pr_url = ?, status = ?, reason = NULL, next_poll_at = NULL, "
+                       "review_started_at = ?, deadline_at = ? WHERE attempt_id = ?",
+                       (number, url, status, started, (started if started is not None else now) + timeout, attempt_id))
             db.execute("UPDATE remote_operation SET status = 'reconciled' WHERE attempt_id = ? AND operation_type = 'create_pr'",
                        (attempt_id,))
             self._event(db, attempt_id, status, now, "Pinned PR attached")
 
-    def first_completion(self, attempt_id: str, now: float) -> float:
+    def save_candidate(self, attempt_id: str, now: float, data: bytes) -> float:
+        artifact = self.save_artifact(data, "review_candidate")
         with self.connect() as db:
             db.execute("UPDATE attempt SET first_completion_at = COALESCE(first_completion_at, ?) WHERE attempt_id = ?",
                        (now, attempt_id))
+            db.execute("INSERT INTO review_candidate VALUES (?, ?) ON CONFLICT(attempt_id) DO UPDATE SET artifact_id = excluded.artifact_id",
+                       (attempt_id, artifact))
             return db.execute("SELECT first_completion_at FROM attempt WHERE attempt_id = ?", (attempt_id,)).fetchone()[0]
+
+    def load_candidate(self, attempt_id: str) -> dict | None:
+        with self.connect() as db:
+            row = db.execute("SELECT artifact_id FROM review_candidate WHERE attempt_id = ?", (attempt_id,)).fetchone()
+        return json.loads(self.read_artifact(row["artifact_id"])) if row else None
 
     def schedule_poll(self, attempt_id: str, next_poll: float, reason: str) -> None:
         with self.connect() as db:
@@ -305,11 +347,11 @@ class RunStore:
             db.execute("UPDATE attempt SET next_poll_at = ?, reason = 'GitHub API rate limit' WHERE attempt_id = ?",
                        (retry_at, attempt_id))
 
-    def confirm_trigger(self, attempt_id: str, observed_at: float, comment_at: float, url: str) -> None:
+    def confirm_trigger(self, attempt_id: str, observed_at: float, comment_at: float, url: str, timeout: int) -> None:
         with self.connect() as db:
-            changed = db.execute("UPDATE attempt SET status = 'awaiting_review', manual_trigger_at = ?, reason = NULL "
-                                 "WHERE attempt_id = ? AND status = 'awaiting_trigger' AND deadline_at > ?",
-                                 (comment_at, attempt_id, observed_at))
+            changed = db.execute("UPDATE attempt SET status = 'awaiting_review', manual_trigger_at = ?, review_started_at = ?, "
+                                 "deadline_at = ?, reason = NULL WHERE attempt_id = ? AND status = 'awaiting_trigger'",
+                                 (comment_at, comment_at, comment_at + timeout, attempt_id))
             if not changed.rowcount:
                 raise StoreError("Attempt is no longer waiting for a manual trigger")
             db.execute("INSERT INTO remote_operation VALUES (?, ?, 'manual_trigger', ?, 'confirmed')",
@@ -335,6 +377,7 @@ class RunStore:
                 db.execute("INSERT INTO finding_claim VALUES (?, ?, ?, ?, ?, ?)",
                            (claim_id, capture_id, source_id, url, locator, body))
             db.execute("UPDATE attempt SET status = 'completed', reason = NULL WHERE attempt_id = ?", (attempt_id,))
+            db.execute("DELETE FROM review_candidate WHERE attempt_id = ?", (attempt_id,))
             self._event(db, attempt_id, "completed", now, signal)
 
     def statuses(self, run_id: str) -> list[dict]:
@@ -349,3 +392,11 @@ class RunStore:
                 WHERE p.run_id = ? ORDER BY v.case_id, v.condition, p.provider_id, p.repeat_index
             """, (run_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def events(self, run_id: str) -> list[dict]:
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("""
+                SELECT e.event_id, e.attempt_id, e.status, e.observed_at, e.reason
+                FROM attempt_event e JOIN attempt a USING (attempt_id)
+                JOIN experiment_pair p USING (pair_id) WHERE p.run_id = ? ORDER BY e.event_id
+            """, (run_id,))]

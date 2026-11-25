@@ -80,10 +80,14 @@ class CaseVariant:
     base_ref: str
     base_sha: str
     head_sha: str
+    isolation_group: str | None = None
 
     @property
     def input_digest(self) -> str:
-        return digest(canonical_json(asdict(self)))
+        data = asdict(self)
+        if data["isolation_group"] is None:
+            del data["isolation_group"]
+        return digest(canonical_json(data))
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,9 @@ class Target:
     publisher: str
     trigger: str = "automatic"
     completion_check: str | None = None
+    completion_policy: str | None = None
+    vendor_version: str | None = None
+    isolation_group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,7 +125,15 @@ class Manifest:
 
     @property
     def json(self) -> bytes:
-        return canonical_json(asdict(self))
+        data = asdict(self)
+        for case in data["cases"]:
+            if case["isolation_group"] is None:
+                del case["isolation_group"]
+        for target in data["targets"]:
+            for optional in ("completion_policy", "vendor_version", "isolation_group"):
+                if target[optional] is None:
+                    del target[optional]
+        return canonical_json(data)
 
     @property
     def manifest_digest(self) -> str:
@@ -132,7 +147,7 @@ class Manifest:
                 case, target, index,
             )
             for case in self.cases
-            for target in self.targets if target.condition == case.condition
+            for target in self.targets if (target.condition, target.isolation_group) == (case.condition, case.isolation_group)
             for index in range(self.repeats)
         )
 
@@ -142,7 +157,7 @@ class ManifestLoader:
     def load(path: Path) -> Manifest:
         try:
             with path.open("rb") as file:
-                return ManifestLoader.parse(tomllib.load(file))
+                return ManifestLoader.parse(json.load(file) if path.suffix.lower() == ".json" else tomllib.load(file))
         except (OSError, ValueError) as error:
             if isinstance(error, ManifestError):
                 raise
@@ -157,19 +172,19 @@ class ManifestLoader:
                 raise ManifestError(f"{key} must be a nonempty array")
         allowed = tuple(sorted({_repo(repo) for repo in data["allowed_repositories"]}))
         cases = tuple(sorted((_case(item) for item in data["cases"]), key=lambda case: (case.case_id, case.condition)))
-        targets = tuple(sorted((_target(item) for item in data["targets"]), key=lambda target: (target.condition, target.provider_id)))
+        targets = tuple(sorted((_target(item) for item in data["targets"]), key=lambda target: (target.condition, target.provider_id, target.isolation_group or "")))
         timeout = _integer(data.get("timeout_seconds", 1800), "timeout_seconds", 1, 86400)
         settling = _integer(data.get("settling_seconds", min(30, timeout - 1)), "settling_seconds", 0, timeout - 1)
         if len({(case.case_id, case.condition) for case in cases}) != len(cases):
             raise ManifestError("Duplicate case and condition")
-        if len({(target.provider_id, target.condition) for target in targets}) != len(targets):
-            raise ManifestError("Duplicate provider and condition")
+        if len({(target.provider_id, target.condition, target.isolation_group) for target in targets}) != len(targets):
+            raise ManifestError("Duplicate provider, condition and isolation group")
         if len({target.repository for target in targets}) != len(targets):
             raise ManifestError("Each provider and condition requires a separate test repository")
         if any(target.repository not in allowed for target in targets):
             raise ManifestError("Target repository is outside the allowlist")
-        if {case.condition for case in cases} != {target.condition for target in targets}:
-            raise ManifestError("Each configured condition requires both cases and targets")
+        if {(case.condition, case.isolation_group) for case in cases} != {(target.condition, target.isolation_group) for target in targets}:
+            raise ManifestError("Each condition and isolation group requires cases and targets")
         return Manifest(
             identifier(data["run_id"], "run_id"), allowed, _pattern(data["rubric_digest"], _DIGEST, "rubric_digest"),
             timeout, settling, _integer(data.get("repeats", 1), "repeats", 1, 100), cases, targets,
@@ -177,7 +192,7 @@ class ManifestLoader:
 
 
 def _case(data: Any) -> CaseVariant:
-    _fields(data, {"case_id", "condition", "title", "body", "base_ref", "base_sha", "head_sha"})
+    _fields(data, {"case_id", "condition", "title", "body", "base_ref", "base_sha", "head_sha"}, {"isolation_group"})
     base = _pattern(data["base_sha"], _SHA, "base_sha")
     head = _pattern(data["head_sha"], _SHA, "head_sha")
     if base == head:
@@ -186,15 +201,23 @@ def _case(data: Any) -> CaseVariant:
     if "\r" in title or "\n" in title:
         raise ManifestError("PR title must fit on one line")
     return CaseVariant(identifier(data["case_id"], "case_id"), identifier(data["condition"], "condition"),
-                       title, _text(data["body"], "PR body", 60000), _ref(data["base_ref"]), base, head)
+                       title, _text(data["body"], "PR body", 60000), _ref(data["base_ref"]), base, head,
+                       identifier(data["isolation_group"], "isolation_group") if "isolation_group" in data else None)
 
 
 def _target(data: Any) -> Target:
-    _fields(data, {"provider_id", "condition", "repository", "publisher"}, {"trigger", "completion_check"})
+    _fields(data, {"provider_id", "condition", "repository", "publisher"},
+            {"trigger", "completion_check", "completion_policy", "vendor_version", "isolation_group"})
     trigger = data.get("trigger", "automatic")
     if trigger not in ("automatic", "manual"):
         raise ManifestError("trigger must be automatic or manual")
     check = data.get("completion_check")
+    policy = data.get("completion_policy")
+    version = data.get("vendor_version")
+    if policy is not None and (policy != "review_or_check" or check is None):
+        raise ManifestError("completion_policy must be review_or_check with a completion_check")
     return Target(identifier(data["provider_id"], "provider_id"), identifier(data["condition"], "condition"),
                   _repo(data["repository"]), _pattern(data["publisher"], _PUBLISHER, "publisher").lower(),
-                  trigger, _text(check, "completion_check", 255) if check is not None else None)
+                  trigger, _text(check, "completion_check", 255) if check is not None else None, policy,
+                  _text(version, "vendor_version", 120) if version is not None else None,
+                  identifier(data["isolation_group"], "isolation_group") if "isolation_group" in data else None)

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from .github import PullRequest, Transport
+from .github import InvalidInput, PullRequest, RemoteError, Transport
 from .manifest import ExperimentPair, canonical_json
 from .store import RunStore
 
@@ -11,16 +11,35 @@ class ReviewCollector:
         self.transport = transport
 
     def collect(self, pair: ExperimentPair, attempt, pr: PullRequest, clock: Callable[[], float], settling: int) -> None:
-        review = self.transport.observe(pair, pr, attempt["manual_trigger_at"] or attempt["started_at"])
-        now = clock()
         attempt_id = attempt["attempt_id"]
-        if now >= attempt["deadline_at"]:
-            self.store.transition(attempt_id, "timed_out", now, "Capture deadline elapsed")
-        elif review.state in {"quota", "failed"}:
-            self.store.transition(attempt_id, review.state, now, review.signal or review.state)
-        elif review.state == "completed" and review.signal:
-            observed = self.store.first_completion(attempt_id, now)
+        deadline = attempt["deadline_at"]
+        observed = attempt["first_completion_at"]
+        candidate = self.store.load_candidate(attempt_id) if observed is not None else None
+        try:
+            review = self.transport.observe(pair, pr, attempt["review_started_at"])
+        except InvalidInput:
+            raise
+        except RemoteError:
+            if candidate is None or clock() < observed + settling:
+                raise
+            self._freeze(attempt_id, pr, clock(), candidate)
+            return
+        now = clock()
+        published = review.published_at if review.published_at is not None else now
+        if published <= deadline and (candidate is None or candidate["signal"] == review.signal):
+            if review.state == "completed" and review.signal:
+                candidate = {"signal": review.signal, "raw": review.raw,
+                             "claims": list({claim[0]: claim for claim in review.claims}.values())}
+                observed = self.store.save_candidate(attempt_id, now, canonical_json(candidate))
+            elif candidate is None and review.state in {"quota", "failed"}:
+                self.store.transition(attempt_id, review.state, now, review.signal or review.state)
+                return
+        if candidate is not None:
             if now >= observed + settling:
-                unique_claims = tuple(dict((claim[0], claim) for claim in review.claims).values())
-                self.store.freeze_capture(attempt_id, pr.head_sha, review.signal, now,
-                                          canonical_json(review.raw), list(unique_claims))
+                self._freeze(attempt_id, pr, now, candidate)
+        elif now >= deadline:
+            self.store.transition(attempt_id, "timed_out", now, "Capture deadline elapsed")
+
+    def _freeze(self, attempt_id: str, pr: PullRequest, now: float, candidate: dict) -> None:
+        self.store.freeze_capture(attempt_id, pr.head_sha, candidate["signal"], now,
+                                  canonical_json(candidate["raw"]), candidate["claims"])

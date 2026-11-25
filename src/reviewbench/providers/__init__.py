@@ -69,11 +69,18 @@ class ReviewerAdapter:
                         and item.get("status") == "completed" and started is not None and ended is not None
                         and threshold <= started <= ended <= captured_at and type(item.get("id")) is int):
                     eligible.append((ended, item["id"], item))
-            if not eligible:
+            fallback = self.target.completion_policy == "review_or_check" and first is not None
+            if not eligible and not fallback:
                 return ReviewObservation("pending", None, (), {})
-            check = min(eligible, key=lambda item: item[:2])[2]
-            if check.get("conclusion") != "success":
-                return ReviewObservation("failed", f"check:{check['id']}", (), {"check": check})
+            if eligible:
+                check = min(eligible, key=lambda item: item[:2])[2]
+                if check.get("conclusion") != "success":
+                    if not fallback:
+                        return ReviewObservation("failed", f"check:{check['id']}", (), {"check": check},
+                                                 _timestamp(check["completed_at"]))
+                    check = None
+                elif fallback and _timestamp(first["submitted_at"]) <= _timestamp(check["completed_at"]):
+                    check = None
         elif first is None:
             return ReviewObservation("pending", None, (), {})
 
@@ -86,4 +93,5 @@ class ReviewerAdapter:
         claims.extend(_claim("issue", item, pr) for item in summaries)
         signal = f"check:{check['id']}" if check else f"review:{first['id']}"
         return ReviewObservation("completed", signal, tuple(claim for claim in claims if claim is not None),
-                                 {"first_review": first, "check": check, "inline": inline, "summaries": summaries})
+                                 {"first_review": first, "check": check, "inline": inline, "summaries": summaries},
+                                 _timestamp(check["completed_at"] if check else first["submitted_at"]))

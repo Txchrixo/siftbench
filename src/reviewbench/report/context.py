@@ -53,7 +53,7 @@ def attach_publications(bundle: dict, audit: list[dict]) -> None:
 
 def attach_conversations(bundle: dict, reconciliation: list[dict]) -> None:
     sources = {(entry["provider"], entry["case"], entry["condition"], entry["pull"].lower(), entry["head"]): entry
-               for entry in reconciliation if not entry["differences"]}
+               for entry in reconciliation if not entry["differences"] and isinstance(entry["pull"], str)}
     for pair in bundle["pairs"]:
         key = pair["provider_id"], pair["case_id"], pair["condition"], (pair.get("pr_url") or "").lower(), pair.get("head_sha")
         if entry := sources.get(key):
