@@ -67,9 +67,9 @@ function showComparison(announce = false, requestedClaim = "") {
     const comparisonsHidden = context.classList.contains("case-issues") && !selectedReviewers.length;
     context.hidden = context.dataset.contextCase !== cases.value || comparisonsHidden;
   }
-  const currentFiles = contexts.find(context => context.classList.contains("case-files") && !context.hidden);
+  const currentFiles = contexts.find(context => context.hasAttribute("data-file-context") && !context.hidden);
   fileCount.textContent = currentFiles?.dataset.fileCount ?? "";
-  fileCount.hidden = !currentFiles;
+  fileCount.hidden = currentFiles?.dataset.fileCount === undefined;
   filesUnavailable.hidden = Boolean(currentFiles);
   problemsUnavailable.hidden = Boolean(cases.value && selectedReviewers.length);
   for (const column of issueColumns) column.hidden = !selectedReviewers.includes(column.dataset.issueProvider);
@@ -77,9 +77,9 @@ function showComparison(announce = false, requestedClaim = "") {
   for (const hint of issueScrollHints) hint.hidden = selectedReviewers.length < 3;
   grid.dataset.visible = visible.length;
   empty.hidden = visible.length > 0;
-  empty.textContent = !selectedReviewers.length && reviewerInputs.length
-    ? "Select a reviewer to compare findings."
-    : "No reviews are available for this selection.";
+  empty.textContent = !cases.value ? "No case conditions were included in this report."
+    : !selectedReviewers.length ? "Select a reviewer to compare findings."
+    : "The selected reviewers have no planned attempts for this case.";
   const caseOption = cases.selectedOptions[0];
   selectedCase.textContent = caseOption?.dataset.title || "";
   selectedCase.hidden = !selectedCase.textContent;
@@ -98,7 +98,7 @@ function showComparison(announce = false, requestedClaim = "") {
     const names = visible.map(panel => panel.querySelector("h3").textContent);
     status.textContent = names.length
       ? `${caseLabel}. Showing ${names.join(" and ")}.`
-      : `${caseLabel}. No reviews available for this selection.`;
+      : empty.textContent;
   }
 }
 

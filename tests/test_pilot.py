@@ -31,6 +31,10 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     before_metrics = before_html.split('id="operational-metrics"', 1)[1].split("</section>", 1)[0]
     assert "Grading incomplete" in before_metrics and "0 of 1 completed PR graded" in before_metrics
     assert "<strong>0 false positives</strong><small>Across 1 graded PR</small>" in before_metrics
+    assert "Diff not included" in before_html and "Awaiting verdict" in before_html
+    before_md = (before_grading / "summary.md").read_text(encoding="utf-8")
+    assert "False positives: Grading incomplete" in before_md
+    assert "0 false positives (Across 1 graded PR)" in before_md
 
     claim, = claims_for_grading(store, manifest.run_id)
     assert "source_url" not in claim
@@ -72,6 +76,7 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     sharing = tmp_path / "public.json"
     assert main(["export", "--bundle", str(first / "results.json"), "--out", str(sharing), "--visibility", "public"]) == 0
     public = sharing.read_text(encoding="utf-8")
+    assert '"metric_availability"' in public and '"not_measured"' in public
     assert "https://" not in public and "A row with the same timestamp" not in public and "Expected ID 42" not in public
     assert "adjudicator" not in public and "reviewer-1" in public and manifest.cases[0].head_sha not in public
     assert main(["compare-runs", "--before", str(first / "results.json"), "--after", str(first / "results.json"),

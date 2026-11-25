@@ -253,7 +253,9 @@ def main(argv: list[str] | None = None) -> int:
             result = audit_campaign(ReportBuilder.load_bundle(args.bundle), manifest, _live_client(manifest))
             _write_json(args.out, result)
             mismatched = sum(bool(item["differences"]) for item in result)
-            _print_json({"pairs": len(result), "mismatched": mismatched})
+            _print_json({"pairs": len(result), "mismatched": mismatched,
+                         "without_archived_sources": sum(item["availability"] in {"no_pr", "no_archived_review_sources"}
+                                                         for item in result)})
             return 2 if mismatched else 0
         elif args.command == "export":
             bundle = ReportBuilder.load_bundle(args.bundle)

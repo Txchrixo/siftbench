@@ -48,8 +48,8 @@ def _pull_number(url: str | None) -> str:
     return match[1] if match else ""
 
 
-def _ratio(numerator: int, denominator: int) -> str:
-    return f"{numerator}/{denominator} ({numerator / denominator:.0%})" if denominator else "N/A"
+def _ratio(numerator: int, denominator: int, *, empty: str = "No reference findings") -> str:
+    return f"{numerator}/{denominator} ({numerator / denominator:.0%})" if denominator else empty
 
 
 def _label(value: str | None) -> str:
@@ -60,6 +60,19 @@ def _review_status(pair: dict) -> str:
     if pair.get("publication"):
         return "Verified publication" if pair["status"] == "completed" else "Formal review missing"
     return _label(pair["status"])
+
+
+def _grading_pending(pair: dict) -> bool:
+    return any(claim["decision"] in {None, "unresolved"} for claim in pair["claims"])
+
+
+def _attempt_status(pair: dict | None) -> str:
+    return _review_status(pair) if pair else "Not planned for this reviewer"
+
+
+def _report_notice(glyph: str, title: str, detail: str, action: str = "") -> str:
+    return (f'<div class="report-notice">{icon(glyph)}<div><strong>{escape(title)}</strong>'
+            f'<p class="subtle">{escape(detail)}</p>{action}</div></div>')
 
 
 def _validate(bundle: dict) -> None:
@@ -144,16 +157,11 @@ def _case_key(pair: dict) -> str:
     return f"{pair['case_id']}:{pair['condition']}:{pair['repeat_index']}"
 
 
-def _case_name(pair: dict) -> str:
-    repeat = f", repeat {pair['repeat_index']}" if pair["repeat_index"] else ""
-    return f"{pair['case_id']} ({pair['condition']}{repeat})"
-
-
 def _case_display(pair: dict) -> str:
     case_id = pair["case_id"]
     name = f"Case {case_id}" if case_id.isdigit() else _label(case_id)
     condition = _label(pair["condition"])
-    repeat = f" · Repeat {pair['repeat_index']}" if pair["repeat_index"] else ""
+    repeat = f" · Repeat {pair['repeat_index'] + 1}" if pair["repeat_index"] else ""
     return f"{name} · {condition}{repeat}"
 
 
@@ -189,11 +197,14 @@ def _report_styles(*, operational: bool = False, assistants: bool = False) -> st
 
 
 def _score_rows(metrics: dict) -> list[tuple[str, ...]]:
+    no_scope = "No shared completed cases"
     return [
-        (provider, _ratio(counts["matched"] + counts["novel"], counts["adjudicated"]),
-         _ratio(counts["matched"], counts["expected"]), str(counts["false_positives"]),
-         str(counts["novel"]), str(counts["justified_context_requests"]), str(counts["duplicates"]),
-         str(counts["unresolved"]), str(counts["ungraded"]))
+        (provider, _ratio(counts["matched"] + counts["novel"], counts["adjudicated"],
+                          empty=no_scope if not metrics["shared"] else
+                          "Grading incomplete" if counts["ungraded"] or counts["unresolved"] else "No scored findings"),
+         _ratio(counts["matched"], counts["expected"], empty="No reference findings" if metrics["shared"] else no_scope),
+         *(str(counts[key]) if metrics["shared"] else no_scope for key in (
+             "false_positives", "novel", "justified_context_requests", "duplicates", "unresolved", "ungraded")))
         for provider, counts in metrics["providers"].items()
     ]
 
@@ -214,16 +225,32 @@ class ReportBuilder:
         scope = "Fixture run" if bundle["fixture"] else "Campaign"
         title = f"{scope}: {bundle['run_id']}"
         md = [f"# {title}", "", f"Shared completed cases: {shared}", "", "## Scores", ""]
-        for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in rows:
+        if bundle["fixture"]:
+            md.extend(("This summary uses local test data.", ""))
+        if rows and not metrics["shared"]:
+            md.extend(("Scores require at least one case condition completed by every reviewer.", ""))
+        if metrics["shared"] and any(int(row[7]) or int(row[8]) for row in rows):
+            md.extend(("Scores are provisional while findings still await a verdict.", ""))
+        for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if metrics["shared"] else ()):
             md.append(f"- {provider}: precision {precision}, recall {recall}, {false} false positives, "
                       f"{novel} novel, {context} justified context requests, {duplicates} duplicates, "
                       f"{unresolved} unresolved, {ungraded} ungraded")
         md.extend(["", "## Coverage", ""])
         for pair in bundle["pairs"]:
-            md.append(f"- {_case_name(pair)} / {pair['provider_id']}: {_label(pair['status'])}")
+            case_title = escape(" ".join((pair.get("case_title") or "").split()))
+            case_label = f'{case_title} ({_case_display(pair)})' if case_title else _case_display(pair)
+            status = _review_status(pair)
+            if pair["status"] == "completed":
+                status += " · Grading incomplete" if _grading_pending(pair) else (
+                    " · No captured comments" if not pair["claims"] and not pair.get("publication") else "")
+            md.append(f"- {case_label} / {_reviewer(pair['provider_id'])}: {status}")
 
         root = files(__package__)
         operational = bool(rows) and (bundle.get("operational_schema_version") == 1 or any("cost" in pair for pair in bundle["pairs"]))
+        if operational:
+            from .comparison import operational_summary
+
+            md.extend(operational_summary(bundle))
         css = _report_styles(operational=operational, assistants=True)
         script = root.joinpath("report.js").read_text(encoding="utf-8")
         policy = f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
@@ -294,8 +321,8 @@ class ReportBuilder:
         if publications:
             included = sum(pair["status"] == "completed" for pair in publications)
             prompt.append(f"A separate publication audit found {len(publications)} additional publications. This report treats {included} of those as completed attempts.")
-        prompt.extend(["", "Aggregated scores"])
-        for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in rows:
+        prompt.extend(["", "Aggregated scores" if shared else "No shared case conditions are ready to score."])
+        for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if shared else ()):
             prompt.append(f"- {_reviewer(provider)} · Precision {precision} · Reference recall {recall} · Additional findings {novel} · "
                           f"False positives {false} · Justified context requests {context} · Duplicates {duplicates} · Unresolved {unresolved} · Ungraded {ungraded}")
         prompt.extend(["", "Precision is the share of scored findings confirmed. Reference recall is the share of expected findings found. "
@@ -355,7 +382,7 @@ class ReportBuilder:
                 if pair:
                     ReportBuilder._coverage_attempt(html, pair, case, fixture=fixture)
                 else:
-                    html.append('<td class="subtle">No attempt</td>')
+                    html.append('<td class="subtle">Not planned for this reviewer</td>')
             html.append("</tr>")
         html.append("</tbody></table></div></section>")
 
@@ -371,6 +398,8 @@ class ReportBuilder:
         elif pair["status"] == "completed" and not pair.get("publication"):
             inline_count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
             html.append(f'<p class="coverage-reason subtle">{inline_count} inline {"comment" if inline_count == 1 else "comments"}</p>')
+        if pair["status"] == "completed" and _grading_pending(pair):
+            html.append('<span class="coverage-grading">Grading incomplete</span>')
         pr_url = _link(pair.get("pr_url")) if not fixture else None
         if pr_url:
             number = _pull_number(pair["pr_url"])
@@ -388,15 +417,23 @@ class ReportBuilder:
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict) -> None:
-        html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>'
-                    '<p class="subtle">Scores use only the case conditions completed by every reviewer.</p></div>')
-        if not rows:
-            html.append('<p class="score-heading subtle">No reviewer results are available.</p></section></div>')
-            return
-        ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4), primary=True)
-        html.append('<details class="additional-scores"><summary>Additional metrics</summary>')
-        ReportBuilder._score_table(html, "Additional metrics", ("False positives", "Context requests", "Duplicates", "Unresolved", "Ungraded"), rows, (3, 5, 6, 7, 8))
-        html.append('</details></section><aside class="scoring-scope" aria-labelledby="scoring-scope-title">'
+        html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
+        if shared:
+            html.append('<p class="subtle">Scores use only the case conditions completed by every reviewer.</p>')
+        html.append('</div>')
+        if not shared:
+            html.append(_report_notice("coverage", "No shared scores yet",
+                                      "At least one case condition must be completed by every reviewer.",
+                                      '<a href="#coverage">Check review coverage</a>'))
+        else:
+            ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4), primary=True)
+            if any(int(row[7]) or int(row[8]) for row in rows):
+                html.append('<p class="score-grading-note subtle"><strong>Grading incomplete.</strong> '
+                            'Scores reflect verdicts recorded so far. See Additional metrics for outstanding findings.</p>')
+            html.append('<details class="additional-scores"><summary>Additional metrics</summary>')
+            ReportBuilder._score_table(html, "Additional metrics", ("False positives", "Context requests", "Duplicates", "Unresolved", "Ungraded"), rows, (3, 5, 6, 7, 8))
+            html.append('</details>')
+        html.append('</section><aside class="scoring-scope" aria-labelledby="scoring-scope-title">'
                     '<h2 id="scoring-scope-title">Scoring scope</h2>'
                     '<details open><summary>How to read the scores</summary><dl class="metric-guide">'
                     '<div><dt>Precision</dt><dd>Share of scored findings that were confirmed.</dd></div>'
@@ -425,7 +462,8 @@ class ReportBuilder:
             for index in indexes:
                 value, divider, percentage = row[index].partition(" (")
                 cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>'
-                        if divider else f'<strong>{escape(value)}</strong>' if primary else escape(value))
+                        if divider else f'<strong>{escape(value)}</strong>' if primary and value.isdigit()
+                        else f'<span class="score-empty-text">{escape(value)}</span>' if primary else escape(value))
                 html.append(f'<td class="metric">{cell}</td>')
             html.append('</tr>')
         html.append('</tbody></table></div>')
@@ -451,7 +489,7 @@ class ReportBuilder:
             completed = sum(pair["status"] == "completed" for pair in group.values())
             details = [reference, _label(case["condition"])]
             if case["repeat_index"]:
-                details.append(f'Repeat {case["repeat_index"]}')
+                details.append(f'Repeat {case["repeat_index"] + 1}')
             details.append(f'{completed}/{len(group)} reviews completed')
             metadata = " · ".join(filter(None, details))
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
@@ -498,16 +536,31 @@ class ReportBuilder:
             pairs = list(group.values())
             revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in pairs}
             if len(revisions) == 1:
-                self._files(html, key, changes.get(next(iter(revisions))), group)
-        html.append('<p id="files-unavailable" class="empty" hidden>No shared pinned diff is available for this case.</p></section></section>')
+                revision = next(iter(revisions))
+                self._files(html, key, changes.get(revision), group, pinned=all(revision))
+            else:
+                html.append(f'<div data-file-context data-context-case="{escape(key, quote=True)}">')
+                html.append(_report_notice("diff", "Different revisions", "The attempts do not share the same base and head. Open each pull request to inspect its own changes."))
+                html.append("</div>")
+        html.append('<p id="files-unavailable" class="empty" hidden>No case to show files for.</p></section></section>')
 
     @staticmethod
-    def _files(html: list[str], key: str, changes: list[dict] | None, group: dict) -> None:
-        if changes is None:
-            return
+    def _files(html: list[str], key: str, changes: list[dict] | None, group: dict, *, pinned: bool) -> None:
         case = escape(key, quote=True)
-        html.append(f'<div class="case-files" data-context-case="{case}" data-file-count="{len(changes)}">')
+        if changes is None:
+            html.append(f'<div data-file-context data-context-case="{case}">')
+            if pinned:
+                html.append(_report_notice("diff", "Diff not included", "Open Files changed on the original pull request or regenerate this report with a source checkout."))
+            else:
+                html.append(_report_notice("commit", "Revisions not recorded", "This report needs the base and head commits to show a pinned diff."))
+            html.append("</div>")
+            return
+        html.append(f'<div class="case-files" data-file-context data-context-case="{case}" data-file-count="{len(changes)}">')
         html.append('<h3 class="file-section-heading">Files changed</h3>')
+        if not changes:
+            html.append(_report_notice("file", "No file changes", "The pinned base and head contain no file changes."))
+            html.append("</div>")
+            return
         html.append('<div class="diff-toolbar" hidden>'
                     '<label class="diff-view-control"><input type="checkbox" data-split-diff> Side-by-side diff</label>')
         if len(changes) > 1:
@@ -543,8 +596,6 @@ class ReportBuilder:
                         f'{render_file_patch(item["patch"], path, annotations.get(path))}</details>')
         if len(changes) > 1:
             html.append('<p class="empty" data-no-files role="status" hidden>No file paths match this filter.</p>')
-        if not changes:
-            html.append('<p class="empty">These commits have no file changes.</p>')
         html.append('</div>')
 
     @staticmethod
@@ -553,7 +604,13 @@ class ReportBuilder:
         html.append(f'<div class="case-issues" data-context-case="{escape(key, quote=True)}">'
                     '<h3>Compare by problem</h3>')
         if not rows:
-            html.append('<p class="empty">This change has no reference or verified additional findings.</p></div>')
+            if not any(pair["status"] == "completed" for pair in group.values()):
+                html.append(_report_notice("publication", "No completed reviews", "Check review coverage for the status of each attempt."))
+            elif any(_grading_pending(pair) for pair in group.values()):
+                html.append(_report_notice("evidence", "No problems confirmed yet", "Some captured findings are still awaiting a verdict."))
+            else:
+                html.append(_report_notice("evidence", "No problems to compare", "No reference findings or verified additional findings are recorded for this case."))
+            html.append("</div>")
             return
         html.append('<p class="subtle">Reference problems come from the rubric. Additional findings share a row only when verified as the same problem.</p>'
                     '<p class="issue-scroll-hint subtle" hidden>Scroll the table to see the other reviewers.</p>'
@@ -575,8 +632,10 @@ class ReportBuilder:
                         label = f'View finding {index}' if len(matches) > 1 else 'View finding'
                         html.append(f'<a href="#claim-{claim_id}">{label}</a>')
                 else:
-                    message = "No attempt" if not pair else (
-                        "No verified match" if pair["status"] == "completed" else "Review unavailable")
+                    message = _attempt_status(pair)
+                    if pair and pair["status"] == "completed":
+                        message = "Match pending grading" if _grading_pending(pair) else (
+                            "Not detected" if reference else "No verified match")
                     html.append(f'<span class="subtle">{message}</span>')
                 html.append('</td>')
             html.append('</tr>')
@@ -607,12 +666,21 @@ class ReportBuilder:
                         f'<p>Base <code>{pair["base_sha"]}</code></p><p>'
                         f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
         if pair["reason"]:
-            html.append(f'<p class="empty">{escape(pair["reason"])}</p>')
+            html.append(f'<p class="attempt-reason subtle">{escape(pair["reason"])}</p>')
         if pair.get("publication"):
             ReportBuilder._publication(html, pair)
-        elif not pair["claims"]:
-            message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
-            html.append(f'<p class="empty">{message}</p>')
+        elif not pair["claims"] and status == "completed":
+            html.append(_report_notice("publication", "No captured findings", "A completion signal was recorded with no captured reviewer comments."))
+        elif not pair["claims"] and not pair["reason"]:
+            detail = {
+                "planned": "The review attempt has not started.",
+                "preparing": "The runner is preparing the pull request.",
+                "awaiting_trigger": "The reviewer still needs to be triggered.",
+                "awaiting_review": "The runner is waiting for a completion signal.",
+                "timed_out": "The review did not complete within the capture window.",
+                "quota": "This attempt is limited by the provider quota.",
+            }.get(status, "No findings were captured for this attempt.")
+            html.append(_report_notice("publication", "No completed review", detail))
         messages = [claim for claim in pair["claims"] if claim["decision"] == "out_of_scope"
                     and (claim.get("source_object_id") or "").startswith("review:")]
 
@@ -633,7 +701,7 @@ class ReportBuilder:
                 decision = claim["decision"]
                 is_message = tag == "ul"
                 heading = inline(title) if title else "Reviewer comment"
-                status = _label(decision)
+                status = "Awaiting verdict" if decision is None else _label(decision)
                 rank = f'<span class="claim-rank" aria-hidden="true">{index}.</span>' if not is_message else ""
                 if is_message:
                     heading = "Review announcement" if claim["body"].startswith("<!-- proofline:review-comment -->") else "Review message"
@@ -657,7 +725,8 @@ class ReportBuilder:
             matched = {claim["expected_id"] for claim in pair["claims"] if claim["decision"] == "confirmed_expected"}
             missing = [finding for finding in pair["expected"] if finding["expected_id"] not in matched]
             if missing:
-                html.append('<div class="finding"><h4>Expected findings without a confirmed match</h4><ul>')
+                heading = "Reference matches pending grading" if _grading_pending(pair) else "Expected findings without a confirmed match"
+                html.append(f'<div class="finding"><h4>{heading}</h4><ul>')
                 html.extend(f'<li>{escape(finding["matching_criteria"])}</li>' for finding in missing)
                 html.append("</ul></div>")
         html.append("</article>")
@@ -698,12 +767,18 @@ class ReportBuilder:
                         f'<code>{escape(locator)}</code></div>')
             if claim.get("diff_hunk"):
                 html.append(render_diff(claim["diff_hunk"], locator, claim.get("diff_side", "RIGHT")))
+            else:
+                html.append('<p class="source-context-note subtle">The comment identified this location without a captured diff excerpt.</p>')
             html.append('</div>')
+        elif (claim.get("source_object_id") or "").startswith("inline:"):
+            html.append('<p class="source-context-note subtle">The inline comment has no recorded file or line location.</p>')
         html.append('<div class="inspection-body"><div class="observation"><h4>Reviewer comment</h4>')
         if severity:
             html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong></p>')
         if rendered := blocks(body):
             html.append(f'<blockquote class="review-copy">{rendered}</blockquote>')
+        else:
+            html.append('<p class="subtle">No readable comment body was captured.</p>')
         html.append(f'<details class="raw-comment"><summary>{icon("source")}Raw comment source</summary>'
                     '<p class="subtle">Unformatted text captured with the review.</p>'
                     f'<pre>{escape(claim["body"])}</pre></details></div>')
@@ -717,4 +792,6 @@ class ReportBuilder:
                 html.append(f'<div class="evidence"><strong>{_label(piece["type"])}</strong>'
                             f'<p>{escape(piece["text"])}</p></div>')
             html.append('</div>')
+        elif decision in {None, "unresolved"}:
+            html.append('<p class="subtle">No verification evidence has been attached to this finding.</p>')
         html.append(f'</div></div><div class="inspector-nav"><a href="#comparison">{icon("back")}Back to findings</a></div></article>')

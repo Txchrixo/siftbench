@@ -69,9 +69,17 @@ def _values(metrics: dict, *, paired: bool = False) -> tuple:
     severe = metrics["high_severity"]
     costs = tuple((f'{currency} {stats["p50"]:g}', f'n={stats["n"]}')
                   for currency, stats in metrics["observed_cost_minor"].items())
+    precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True)
+    recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True)
+    grading_pending = any(metrics["verdict_counts"].get(key) for key in ("ungraded", "unresolved"))
+    if not metrics["completed"]:
+        precision = recall = _MetricState("No matched reviews" if paired else "No completed reviews")
+    elif grading_pending:
+        precision = (precision[0], f"{precision[1]} · Provisional") if precision else _MetricState("Grading incomplete", incomplete=True)
+        if recall:
+            recall = recall[0], f"{recall[1]} · Provisional"
     return (
-        _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True),
-        _fraction(metrics["matched"], metrics["expected"], "", percent=True),
+        precision, recall,
         _false_positive_reading(metrics, paired=paired),
         _fraction(severe["missed"], severe["expected"], "Missed / expected"),
         _latency(metrics["completion_seconds"]),
@@ -90,6 +98,23 @@ def _value(value: tuple | _MetricState | None, label: str) -> str:
     records = (value,) if isinstance(value[0], str) else value
     return "".join(f'<span class="metric-reading"><strong>{escape(main)}</strong>'
                    f'<small>{escape(detail)}</small></span>' for main, detail in records)
+
+
+def operational_summary(bundle: dict) -> list[str]:
+    lines = ["", "## Operational metrics", ""]
+    for row in campaign_metrics(bundle, reviewer_names=True)["reviewers"]:
+        lines.extend((f'### {_reviewer(row["reviewer"])}', ""))
+        for (label, _), value in zip(_METRICS[2:], _values(row["operations"])[2:], strict=True):
+            if isinstance(value, _MetricState):
+                reading = " · ".join(filter(None, (value.label, value.detail)))
+            elif value is None:
+                reading = _MISSING_LABELS.get(label, "Not measured")
+            else:
+                values = (value,) if isinstance(value[0], str) else value
+                reading = " / ".join(f"{main} ({detail})" for main, detail in values)
+            lines.append(f"- {label}: {reading}")
+        lines.append("")
+    return lines
 
 
 def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool = False,
@@ -157,7 +182,8 @@ def operational_metrics(bundle: dict) -> str:
             '<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.</p></div>',
             _matrix(headers, values, operational=True)]
     repeats = [(_reviewer_display(row["reviewer"]), str(repeat["repeat_index"] + 1),
-                f'{repeat["completed"]} / {repeat["planned"]}', _ratio(repeat["matched"], repeat["expected"]))
+                f'{repeat["completed"]} / {repeat["planned"]}',
+                _ratio(repeat["matched"], repeat["expected"], empty="No completed reviews" if not repeat["completed"] else "No reference findings"))
                for row in reviewers if len(row["repeats"]) > 1 for repeat in row["repeats"]]
     if repeats:
         html.append('<details class="analysis-disclosure"><summary>Results by repetition</summary>'
@@ -169,13 +195,21 @@ def operational_metrics(bundle: dict) -> str:
             peers = pair["reviewers"]
             rows.append((" <span class='subtle'>/</span> ".join(_reviewer_display(peer["reviewer"]) for peer in peers),
                          f'{pair["completed_in_both"]} / {pair["planned_in_both"]}',
-                         " / ".join(_ratio(peer["metrics"]["matched"] + peer["metrics"]["novel"],
-                                           peer["metrics"]["adjudicated"]) for peer in peers),
-                         " / ".join(_ratio(peer["metrics"]["matched"], peer["metrics"]["expected"]) for peer in peers)))
+                         _peer_scores(peers, index=0), _peer_scores(peers, index=1)))
         html.append('<details class="analysis-disclosure"><summary>Pairwise scores on matched samples</summary>'
                     + _table("Pairwise scores", ("Reviewer pair", "Matched samples", "Precision", "Reference recall"), rows)
                     + "</details>")
     return "".join(html) + "</section>"
+
+
+def _peer_scores(peers: list[dict], *, index: int) -> str:
+    result = []
+    for peer in peers:
+        metrics = peer["metrics"]
+        value = _values(metrics, paired=True)[index]
+        label = _METRICS[index][0]
+        result.append(f'<div class="peer-score"><small>{escape(_reviewer(peer["reviewer"]))}</small>{_value(value, label)}</div>')
+    return "".join(result)
 
 
 def _attempt(case: dict, stage: str, provider: str, *, fixture: bool) -> str:
@@ -188,6 +222,8 @@ def _attempt(case: dict, stage: str, provider: str, *, fixture: bool) -> str:
         label = f"PR #{number}" if number else "Pull request"
         accessible = escape(f'{stage.capitalize()} · {_reviewer(provider)} · {label} · {case.get("case_title") or case["case_id"]}', quote=True)
         source = f'<a href="{href}" aria-label="{accessible}">{label}{icon("external")}</a>'
+    elif not fixture:
+        source = '<span class="sample-source-note subtle">PR link not recorded</span>'
     return (f'<div class="sample-attempt"><span class="metric-stage">{stage.capitalize()}</span>'
             f'<span class="state {escape(state, quote=True)}">{escape(_label(state))}</span>{source}</div>')
 
@@ -234,13 +270,16 @@ def _settings(result: dict) -> str:
     for side in ("before", "after"):
         html.append(f'<section><h3>{side.capitalize()}</h3>')
         if not result[f"{side}_configuration"]:
-            html.append('<p class="subtle">Unavailable in this source bundle.</p>')
+            html.append('<p class="subtle">This campaign bundle does not record reviewer settings.</p>')
         for row in result[f"{side}_configuration"]:
             html.append(f'<div class="recorded-config">{_reviewer_display(row["provider"])}'
                         f'<span class="coverage-case">{escape(_label(row.get("condition")))}</span><dl>')
             for name, key in (("Trigger", "trigger"), ("Completion signal", "completion_policy"),
                               ("Check", "check"), ("Vendor version", "vendor_version")):
-                html.append(f'<div><dt>{name}</dt><dd>{escape(str(row[key] or "Unavailable"))}</dd></div>')
+                value = row[key]
+                if key == "check" and not value and row["completion_policy"] == "review":
+                    value = "GitHub review used"
+                html.append(f'<div><dt>{name}</dt><dd>{escape(str(value or "Not recorded"))}</dd></div>')
             html.append("</dl></div>")
         html.append("</section>")
     return "".join(html) + "</div></details>"

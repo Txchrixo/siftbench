@@ -76,12 +76,34 @@ def _metrics(pairs: list[dict]) -> dict:
         if verified_times:
             first_finding.append(min(verified_times))
     novel = verdicts["confirmed_novel"]
+    if not complete:
+        grading = "no_completed_reviews"
+    elif not graded_prs:
+        grading = "grading_incomplete"
+    elif graded_prs < len(complete):
+        grading = "partially_graded"
+    else:
+        grading = "measured"
+    adjudicated = matched + novel + verdicts["false_positive"]
+    grading_pending = bool(verdicts["ungraded"] or verdicts["unresolved"])
+    precision_availability = ("provisional" if grading_pending else "measured") if adjudicated else (
+        "grading_incomplete" if grading_pending else "no_scored_findings")
+    recall_availability = ("provisional" if grading_pending else "measured") if expected else "no_reference_findings"
     return {**_scope(pairs), "matched": matched, "expected": expected, "novel": novel,
-            "adjudicated": matched + novel + verdicts["false_positive"], "false_positives": verdicts["false_positive"],
+            "adjudicated": adjudicated, "false_positives": verdicts["false_positive"],
             "false_positives_per_graded_pr": {"false_positives": false_positives, "graded_prs": graded_prs},
             "high_severity": {"expected": high_expected, "missed": high_missed},
             "verdict_counts": dict(sorted(verdicts.items())), "completion_seconds": _distribution(completion),
             "first_verified_finding_seconds": _distribution(first_finding),
+            "metric_availability": {
+                "precision": precision_availability if complete else "no_completed_reviews",
+                "reference_recall": recall_availability if complete else "no_completed_reviews",
+                "false_positives_per_graded_pr": grading,
+                "high_severity": "measured" if high_expected else "no_graded_severe_references",
+                "completion_seconds": "measured" if completion else "not_measured",
+                "first_verified_finding_seconds": "measured" if first_finding else "not_measured",
+                "observed_cost_minor": "measured" if costs else "not_measured",
+            },
             "observed_cost_minor": {currency: {"n": len(amounts), "total": sum(amounts), "p50": median(amounts)}
                                     for currency, amounts in sorted(costs.items())}}
 

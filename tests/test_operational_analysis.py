@@ -39,6 +39,9 @@ def test_operational_metrics_distinguish_no_completions_from_partial_grading(man
     assert "<strong>1 false positive</strong><small>1 of 2 completed PRs graded</small>" in report
     assert "<strong>No completed reviews</strong>" in report
     assert "Grading incomplete" not in report
+    reviewers = campaign_metrics(bundle, reviewer_names=True)["reviewers"]
+    assert [row["operations"]["metric_availability"]["false_positives_per_graded_pr"] for row in reviewers] == [
+        "partially_graded", "no_completed_reviews"]
 
 
 def test_paired_scope_keeps_repeats_and_missing_data_visible(manifest_data):
@@ -95,7 +98,9 @@ def test_audit_checks_source_identity_without_affecting_score(manifest_data):
                       "user": {"login": publisher}, "commit_id": pr.head_sha}], [], [], [])
 
     original = deepcopy(bundle)
-    result = audit_campaign(bundle, manifest, SourceClient())[0]
+    result, without_sources = audit_campaign(bundle, manifest, SourceClient())
+    assert result["availability"] == "verified"
+    assert without_sources["availability"] == "no_archived_review_sources"
     assert result["publication_sources"] == ["review:42"]
     assert result["claims"][0]["matches"] is True
     assert bundle == original

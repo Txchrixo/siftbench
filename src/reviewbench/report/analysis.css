@@ -12,6 +12,9 @@
 .analysis-table :is(th, td) > .coverage-case { margin-block-start: var(--space-1); font-weight: 500; }
 .metric-reading { display: grid; }
 .metric-reading + .metric-reading { margin-block-start: var(--space-2); }
+.peer-score + .peer-score { margin-block-start: var(--space-2); }
+.peer-score > small, .sample-source-note { display: block; font-size: .75rem; }
+.peer-score > small { color: var(--text-secondary); }
 .metric-reading strong { font-size: 1rem; }
 .metric-reading small, .metric-stage, .metric-state strong { color: var(--text-secondary); }
 .metric-reading small, .metric-stage { font-size: .75rem; }

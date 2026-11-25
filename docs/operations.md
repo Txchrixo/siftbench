@@ -66,3 +66,5 @@ reviewbench export --bundle dist/cohort-a/results.json --visibility public --out
 ```
 
 The private bundle can recreate the report and contains original reviewer text, diffs, and evidence. The allowlisted public JSON contains aggregate metrics and per-file anonymous reviewer labels. Use `--named-reviewers` only for a report approved for named publication. Treat the regular HTML, paired comparison, and audit as private artifacts. Confirm organizational approval to distribute the aggregate metrics before publishing them.
+
+Public summaries and comparison JSON include `metric_availability` alongside numeric fields. For false positives, read this field and the number of graded PRs before interpreting a zero. A partially graded result covers only the graded subset. Timing percentiles remain `null` at zero observations. A replay bundle preserves source data and optional fields so the renderer can distinguish missing evidence from an empty result. Audit output distinguishes a missing PR, no archived review sources, a verification failure, and a verified source.

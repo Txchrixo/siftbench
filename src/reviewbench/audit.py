@@ -38,12 +38,18 @@ def audit_campaign(bundle: dict, manifest: Manifest, client: GitHubClient) -> li
         try:
             pr = client.get_pull(target.repository, int(match[1]))
             if (pr.base_sha, pr.head_sha) != (pair.get("base_sha"), pair.get("head_sha")):
+                result["availability"] = "different"
                 result["differences"].append("Current PR base or head differs from the frozen revision")
                 continue
             if pr.title is not None and pr.title != pair.get("case_title", pr.title):
                 result["differences"].append("Current PR title differs from the archived title")
             _audit_sources(pair, pr, target.publisher, client.review_sources(pr), result)
-            result["availability"] = "verified" if not result["differences"] else "different"
+            if result["differences"]:
+                result["availability"] = "different"
+            elif not result["claims"] and not result["publication_sources"]:
+                result["availability"] = "no_archived_review_sources"
+            else:
+                result["availability"] = "verified"
         except RemoteError:
             result["availability"] = "unavailable"
             result["differences"].append("GitHub sources could not be verified")
