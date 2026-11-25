@@ -97,7 +97,7 @@ def publication_latency(bundle: dict) -> str:
         samples.sort(key=lambda row: (row[0], row[1]["pair_id"]))
         value = median(seconds for seconds, _ in samples)
         interval = median_interval([seconds for seconds, _ in samples])
-        spread = f'<span class="subtle latency-interval">95% CI {interval[0]:g}-{interval[1]:g} s</span>' if interval else ""
+        spread = f'<span class="subtle latency-interval">Likely {interval[0]:g}-{interval[1]:g} s</span>' if interval else ""
         html.append(f'<div class="latency-row"><div class="latency-reviewer">{_reviewer_display(provider)}'
                     f'<span class="subtle">{value:g} s median · n={len(samples)}</span>{spread}</div>'
                     f'{_plot_row(samples, ticks[-1], ticks, bundle["fixture"])}</div>')

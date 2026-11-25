@@ -265,7 +265,15 @@ th:first-child { position: sticky; inset-inline-start: 0; background: var(--surf
 .main-scores { border-top: 1px solid var(--border); }
 .main-scores th, .main-scores td { padding: var(--space-3) var(--panel-inset); }
 .main-scores .metric > strong { font-size: clamp(1rem, 2vw, 1.3rem); line-height: 1.2; }
-.score-interval { display: block; margin-top: var(--space-1); color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.range { display: grid; justify-items: end; gap: .1875rem; inline-size: 7.5rem; margin: var(--space-2) 0 0 auto; }
+.metric-reading .range { justify-items: start; margin-inline: 0; }
+.range-bar { display: block; inline-size: 100%; block-size: .375rem; overflow: visible; }
+.range-track { fill: var(--border); }
+.range-band { fill: color-mix(in srgb, var(--info) 45%, transparent); }
+.range-point { fill: var(--text-primary); }
+.range-label { color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reading-facts { display: grid; gap: .125rem; margin-block-start: var(--space-1); color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.reading-facts b { margin-inline-end: .25rem; color: var(--text-primary); font-weight: 650; }
 .score-ratio { display: block; margin-top: var(--space-1); color: var(--text-secondary); font-size: .8125rem; }
 .additional-scores table { min-inline-size: 34rem; }
 .coverage-case, .coverage-title { display: block; }

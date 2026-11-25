@@ -31,6 +31,11 @@ def median_interval(values: list[float], *, resamples: int = 2000, level: float 
     return medians[int(tail * resamples)], medians[min(resamples - 1, int((1 - tail) * resamples))]
 
 
+def percent_bounds(successes: int, total: int) -> tuple[int, int] | None:
+    interval = wilson_interval(successes, total)
+    return (round(interval[0] * 100), round(interval[1] * 100)) if interval else None
+
+
 def percent_interval(successes: int, total: int) -> str | None:
     interval = wilson_interval(successes, total)
     if not interval:

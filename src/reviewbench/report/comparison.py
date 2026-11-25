@@ -1,11 +1,12 @@
 """Operational and paired campaign views for self-contained reports."""
 
 from dataclasses import dataclass
+from typing import NamedTuple
 from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _footer, _with_interval, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
+from . import (_SELECT_CHEVRON, _footer, _range_bar, _with_interval, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
 from .info import info, info_templates
@@ -42,6 +43,13 @@ _MISSING_REASONS = {
 }
 
 
+class _Reading(NamedTuple):
+    main: str
+    detail: str
+    extra: str = ""  # trusted markup shown under the reading
+    note: str = ""  # the same information as plain text for Markdown
+
+
 @dataclass(frozen=True)
 class _MetricState:
     label: str
@@ -62,28 +70,33 @@ def _false_positive_reading(metrics: dict, *, paired: bool) -> tuple[str, str] |
         return _MetricState("Grading incomplete", f'0 of {_plural(completed, "completed PR")} graded', incomplete=True)
     detail = (f'Across {_plural(graded, "graded PR")}' if graded == completed
               else f'{graded} of {_plural(completed, "completed PR")} graded')
-    return _plural(reading["false_positives"], "false positive"), detail
+    return _Reading(_plural(reading["false_positives"], "false positive"), detail)
 
 
-def _latency(stats: dict) -> tuple[str, str] | None:
-    if stats["n"]:
-        interval = stats.get("p50_ci95")
-        spread = f' · 95% CI {interval[0]:g}-{interval[1]:g} s' if interval else ""
-        return f'{stats["p50"]:g} s', f'Median{spread} · p95 {stats["p95"]:g} s · n={stats["n"]}'
-    return None
+def _latency(stats: dict) -> _Reading | None:
+    if not stats["n"]:
+        return None
+    interval = stats.get("p50_ci95")
+    facts = [f'<span><b>Likely</b> {interval[0]:g}-{interval[1]:g} s</span>'] if interval else []
+    facts.append(f'<span><b>95% within</b> {stats["p95"]:g} s</span>')
+    note = (f'95% CI {interval[0]:g}-{interval[1]:g} s · ' if interval else "") + f'p95 {stats["p95"]:g} s'
+    return _Reading(f'{stats["p50"]:g} s', f'Median of {_plural(stats["n"], "review")}',
+                    f'<span class="reading-facts">{"".join(facts)}</span>', note)
 
 
-def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False) -> tuple[str, str] | None:
+def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False) -> _Reading | None:
     if not denominator:
         return None
     count = f"{numerator} / {denominator}"
-    interval = percent_interval(numerator, denominator)
-    return (f"{numerator / denominator:.0%}", f"{count} · {interval}" if interval else count) if percent else (count, unit)
+    if not percent:
+        return _Reading(count, unit)
+    return _Reading(f"{numerator / denominator:.0%}", count, _range_bar(numerator, denominator),
+                    percent_interval(numerator, denominator) or "")
 
 
 def _values(metrics: dict, *, paired: bool = False) -> tuple:
     severe = metrics["high_severity"]
-    costs = tuple((f'{currency} {stats["p50"]:g}', f'n={stats["n"]}')
+    costs = tuple(_Reading(f'{currency} {stats["p50"]:g}', f'Median of {_plural(stats["n"], "attempt")}')
                   for currency, stats in metrics["observed_cost_minor"].items())
     precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True)
     recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True)
@@ -91,9 +104,9 @@ def _values(metrics: dict, *, paired: bool = False) -> tuple:
     if not metrics["completed"]:
         precision = recall = _MetricState("No matched reviews" if paired else "No completed reviews")
     elif grading_pending:
-        precision = (precision[0], f"{precision[1]} · Provisional") if precision else _MetricState("Grading incomplete", incomplete=True)
+        precision = precision._replace(detail=f"{precision.detail} · Provisional") if precision else _MetricState("Grading incomplete", incomplete=True)
         if recall:
-            recall = recall[0], f"{recall[1]} · Provisional"
+            recall = recall._replace(detail=f"{recall.detail} · Provisional")
     return (
         precision, recall,
         _false_positive_reading(metrics, paired=paired),
@@ -111,9 +124,9 @@ def _value(value: tuple | _MetricState | None, label: str) -> str:
         detail = f'<small>{escape(status.detail)}</small>' if status.detail else ""
         return (f'<span class="metric-reading metric-state{state_class}">'
                 f'<strong>{escape(status.label)}</strong>{detail}</span>')
-    records = (value,) if isinstance(value[0], str) else value
-    return "".join(f'<span class="metric-reading"><strong>{escape(main)}</strong>'
-                   f'<small>{escape(detail)}</small></span>' for main, detail in records)
+    records = (value,) if isinstance(value, _Reading) else value
+    return "".join(f'<span class="metric-reading"><strong>{escape(item.main)}</strong>'
+                   f'<small>{escape(item.detail)}</small>{item.extra}</span>' for item in records)
 
 
 def operational_summary(bundle: dict) -> list[str]:
@@ -126,8 +139,8 @@ def operational_summary(bundle: dict) -> list[str]:
             elif value is None:
                 reading = _MISSING_LABELS.get(label, "Not measured")
             else:
-                values = (value,) if isinstance(value[0], str) else value
-                reading = " / ".join(f"{main} ({detail})" for main, detail in values)
+                values = (value,) if isinstance(value, _Reading) else value
+                reading = " / ".join(f"{item.main} ({' · '.join(filter(None, (item.detail, item.note)))})" for item in values)
             lines.append(f"- {label}: {reading}")
         lines.append("")
     return lines

@@ -87,13 +87,14 @@ _ENTRIES: dict[str, dict] = {
     },
     "interval": {
         "kind": "Statistics", "tone": "hl", "title": "95% confidence interval",
-        "lead": 'The range the true rate could plausibly fall in, given <b class="hl">how few findings</b> were observed.',
+        "lead": 'Shown as <b class="hl">Likely</b>: the range the true value could plausibly fall in, given how few observations there are.',
         "points": (
-            ("hl", "Wide means unsure", "5 of 5 correct is 100%, but the interval can still start near 57%."),
+            ("hl", "Reading the bar", "The shaded part is the likely range on a 0 to 100% scale. The white tick is the observed score."),
+            ("hl", "Wide means unsure", "5 of 5 correct is 100%, but the likely range still starts near 57%."),
             ("warn", "Slightly optimistic", "Each finding counts separately. Findings one reviewer leaves on the same pull request are related, so the range is a little too narrow when a reviewer has several per pull request."),
             ("ok", "Overlap", "When two reviewers' ranges overlap heavily, the data cannot separate them."),
         ),
-        "note": "Timing intervals resample the observed times around the median and appear from 5 observations.",
+        "note": "For times, Likely is the range of the median, and 95% within is the time 95% of reviews finished under. Both appear from 5 observations.",
     },
     "scored_conditions": {
         "kind": "Campaign total", "tone": "hl", "title": "Scored conditions",

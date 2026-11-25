@@ -16,7 +16,7 @@ from .context import publication_text, validate_context
 from .diff import render_diff, render_file_patch
 from .icons import icon
 from .info import info, info_templates
-from ..stats import percent_interval
+from ..stats import percent_bounds, percent_interval
 from .issues import issue_rows
 
 
@@ -70,6 +70,20 @@ def _with_interval(text: str) -> str:
     match = re.fullmatch(r"([0-9]+)/([0-9]+) \((.+)\)", text)
     interval = percent_interval(int(match[1]), int(match[2])) if match else None
     return f"{match[1]}/{match[2]} ({match[3]}, {interval})" if interval else text
+
+
+def _range_bar(successes: int, total: int) -> str:
+    """A 0-100% track with the likely range shaded and the observed value marked."""
+    bounds = percent_bounds(successes, total)
+    if not bounds:
+        return ""
+    low, high = bounds
+    point = min(max(round(successes / total * 100) - 1, 0), 98)
+    return ('<span class="range"><svg class="range-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+            '<rect class="range-track" x="0" y="2.5" width="100" height="1"/>'
+            f'<rect class="range-band" x="{low}" y="1" width="{max(high - low, 1)}" height="4" rx="1"/>'
+            f'<rect class="range-point" x="{point}" y="0" width="2" height="6"/></svg>'
+            f'<span class="range-label">Likely {low}-{high}%<span class="visually-hidden"> (95% confidence interval)</span></span></span>')
 
 
 def _label(value: str | None) -> str:
@@ -563,8 +577,7 @@ class ReportBuilder:
             for index in indexes:
                 value, divider, percentage = row[index].partition(" (")
                 fraction = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
-                interval = percent_interval(int(fraction[1]), int(fraction[2])) if fraction and index in (1, 2) else None
-                spread = f'<span class="score-interval">{interval}</span>' if interval else ""
+                spread = _range_bar(int(fraction[1]), int(fraction[2])) if fraction and index in (1, 2) else ""
                 cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>{spread}'
                         if divider else f'<strong>{escape(value)}</strong>' if primary and value.isdigit()
                         else f'<span class="score-empty-text">{escape(value)}</span>' if primary else escape(value))
