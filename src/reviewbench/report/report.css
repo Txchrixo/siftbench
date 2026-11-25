@@ -11,6 +11,7 @@
 html {
   color-scheme: dark;
   scroll-padding-top: 5rem;
+  scrollbar-color: var(--text-secondary) var(--background);
   --space-1: .25rem;
   --space-2: .5rem;
   --space-3: .75rem;
@@ -166,15 +167,20 @@ main > [data-report-view] { margin-top: 0; }
 .scroll {
   background: var(--surface);
   border-radius: .5rem;
-  overflow-x: auto;
-  scrollbar-color: var(--text-muted) var(--secondary);
+  max-block-size: min(33rem, 65dvh);
+  overflow: auto;
+  isolation: isolate;
 }
+.scroll, .diff-lines, .reviewer-panel { scrollbar-color: var(--text-secondary) var(--secondary); scrollbar-width: thin; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
 th, td { padding: var(--space-2) var(--space-4); text-align: left; vertical-align: middle; }
 thead th { color: var(--text-secondary); font-size: .8125rem; font-weight: 650; }
 tbody th { font-size: .875rem; font-weight: 680; }
 tbody tr > * { border-top: 1px solid var(--border); }
 th:first-child { position: sticky; inset-inline-start: 0; background: var(--surface); }
+.scroll tbody th:first-child { z-index: 1; }
+.scroll thead th { position: sticky; inset-block-start: 0; z-index: 2; background: var(--surface); }
+.scroll thead th:first-child { z-index: 3; }
 .metric { text-align: right; white-space: nowrap; }
 .score-table thead .metric { white-space: normal; }
 .coverage-case, .coverage-title { display: block; }
@@ -215,14 +221,27 @@ a.state:hover { text-decoration: underline; }
 .filters > label { display: grid; align-content: start; gap: var(--space-1); min-width: 0; color: var(--text-secondary); font-size: .8125rem; font-weight: 650; }
 .reviewer-picker { padding: 0; margin: 0; min-width: 0; border: 0; }
 .reviewer-picker legend { padding: 0 0 var(--space-1); color: var(--text-secondary); font-size: .8125rem; font-weight: 650; }
+#reviewer-select { position: relative; margin: 0; }
+#reviewer-select > summary { gap: var(--space-2); padding: var(--space-1) var(--space-3); border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); }
+#reviewer-select > summary:hover { border-color: var(--text-secondary); }
+#reviewer-select > summary::before { order: 2; margin: 0 var(--space-1) 0 0; flex: 0 0 auto; transform: rotate(45deg); }
+#reviewer-select[open] > summary::before { transform: rotate(225deg); }
+#reviewer-select > summary span { margin-inline-start: 0; }
+#reviewer-preview { display: flex; align-items: center; gap: var(--space-1); flex: 1 1 auto; min-width: 0; }
+.reviewer-chip, .reviewer-more { background: var(--secondary); border: 1px solid var(--border); border-radius: .35rem; padding: var(--space-1) var(--space-2); font-size: .8125rem; }
+.reviewer-chip .reviewer-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reviewer-more { flex: 0 0 auto; color: var(--text-secondary); }
+.reviewer-panel { position: absolute; z-index: 2; inset: calc(100% + var(--space-1)) 0 auto; max-block-size: min(19rem, 48dvh); overflow: auto; padding: var(--space-2); background: var(--secondary); border: 1px solid var(--text-muted); border-radius: .5rem; box-shadow: 0 .65rem 1.5rem var(--primary); }
+#reviewer-select.opens-up .reviewer-panel { inset: auto 0 calc(100% + var(--space-1)); }
 .reviewer-options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .reviewer-options:has(.reviewer-option:nth-child(5)) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); }
 .reviewer-option { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-size); padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--text-muted); border-radius: .5rem; cursor: pointer; }
 .reviewer-option:has(input:checked) { border-color: var(--text-secondary); }
 .reviewer-option input { margin: 0; accent-color: var(--accent); inline-size: 1rem; block-size: 1rem; flex: 0 0 auto; }
 .reviewer-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
-#reviewer-count { margin-inline-start: var(--space-1); font-variant-numeric: tabular-nums; }
+#reviewer-count { flex: 0 0 auto; color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
 .reviewer-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
+.reviewer-panel .reviewer-actions { position: sticky; inset-block-start: 0; z-index: 1; padding-bottom: var(--space-2); margin-bottom: 0; background: var(--secondary); }
 .reviewer-actions button { min-height: var(--control-size); padding: var(--space-1) var(--space-2); color: var(--text-primary); background: var(--secondary); border: 1px solid var(--text-muted); border-radius: .35rem; font: inherit; cursor: pointer; }
 .reviewer-actions button:hover { background: var(--surface); }
 .reviewer-actions button[aria-disabled="true"] { color: var(--text-secondary); cursor: default; }
@@ -403,7 +422,6 @@ select:hover { border-color: var(--text-secondary); }
   overflow: auto;
   padding-block: var(--space-1);
   border-top: 1px solid var(--border);
-  scrollbar-color: var(--text-muted) var(--secondary);
   font: .8125rem/1.6 ui-monospace, Consolas, monospace;
 }
 .diff-line { display: grid; grid-template-columns: 3ch 3ch minmax(max-content, 1fr); gap: var(--space-2); min-width: max-content; padding-inline: var(--space-3); }
@@ -526,6 +544,7 @@ details[open] > :not(summary) { animation: enter 150ms ease-out; }
   .reviewer-options:has(.reviewer-option:nth-child(5)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reviewer-option { gap: var(--space-1); padding-inline: var(--space-2); font-size: .875rem; }
   .reviewer-option .reviewer-name { gap: var(--space-1); }
+  .reviewer-chip { gap: var(--space-1); padding-inline: var(--space-1); }
   .case-issues th:first-child { min-inline-size: 7.5rem; max-inline-size: 10rem; }
   .case-issues [data-issue-provider] { min-inline-size: 6.75rem; }
   th, td { padding-inline: var(--space-3); }
@@ -537,6 +556,8 @@ details[open] > :not(summary) { animation: enter 150ms ease-out; }
 }
 @media (max-width: 22rem) {
   html { scroll-padding-top: 6.5rem; }
+  #reviewer-select > summary:has(.reviewer-more) #reviewer-count { display: none; }
+  .reviewer-options:has(.reviewer-option:nth-child(5)) { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

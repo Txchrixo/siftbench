@@ -1,6 +1,9 @@
 const controls = document.querySelector("#comparison-controls");
 const cases = document.querySelector("#compare-case");
 const reviewerInputs = [...controls.querySelectorAll('input[name="reviewer"]')];
+const reviewerSelect = document.querySelector("#reviewer-select");
+const reviewerTrigger = reviewerSelect.querySelector("summary");
+const reviewerPreview = document.querySelector("#reviewer-preview");
 const reviewerCount = document.querySelector("#reviewer-count");
 const reviewerActions = [...controls.querySelectorAll("[data-select-reviewers]")];
 const grid = document.querySelector(".comparison-grid");
@@ -19,9 +22,27 @@ const overview = document.querySelector("#overview");
 let currentView = overview;
 let activeClaim = "";
 
+function showReviewerSelection(selected) {
+  const names = selected.slice(0, 2).map(input => input.labels[0].querySelector(".reviewer-name").cloneNode(true));
+  for (const name of names) name.classList.add("reviewer-chip");
+  reviewerPreview.replaceChildren(...names);
+  if (!names.length) reviewerPreview.textContent = "Select reviewers";
+  if (selected.length > names.length) {
+    const more = document.createElement("span");
+    more.className = "reviewer-more";
+    more.textContent = `+${selected.length - names.length}`;
+    more.setAttribute("aria-hidden", "true");
+    reviewerPreview.append(more);
+  }
+  reviewerCount.textContent = reviewerInputs.length ? `${selected.length} / ${reviewerInputs.length}` : "";
+  const previewNames = names.map(name => name.textContent).join(", ");
+  reviewerTrigger.setAttribute("aria-label", `Select reviewers. ${selected.length} of ${reviewerInputs.length} selected. ${previewNames}`.trim());
+}
+
 function showComparison(announce = false, requestedClaim = "") {
-  const selectedReviewers = reviewerInputs.filter(input => input.checked).map(input => input.value);
-  reviewerCount.textContent = reviewerInputs.length ? `${selectedReviewers.length} / ${reviewerInputs.length}` : "";
+  const selected = reviewerInputs.filter(input => input.checked);
+  const selectedReviewers = selected.map(input => input.value);
+  showReviewerSelection(selected);
   for (const action of reviewerActions) {
     const targetCount = action.dataset.selectReviewers === "all" ? reviewerInputs.length : 0;
     action.setAttribute("aria-disabled", String(selectedReviewers.length === targetCount));
@@ -69,6 +90,7 @@ function showComparison(announce = false, requestedClaim = "") {
 function showRoute(scroll = true) {
   const target = document.getElementById(location.hash.slice(1));
   currentView = target?.closest("[data-report-view]") || (target?.id === "main" ? currentView : overview);
+  if (currentView.id !== "comparison") reviewerSelect.open = false;
   for (const view of views) view.hidden = view !== currentView;
   for (const link of navigation) {
     if (link.hash === `#${currentView.id}`) link.setAttribute("aria-current", "location");
@@ -100,6 +122,25 @@ if (panels.length) {
     });
   }
 }
+
+reviewerSelect.addEventListener("toggle", () => {
+  if (!reviewerSelect.open) return;
+  const trigger = reviewerTrigger.getBoundingClientRect();
+  const below = window.innerHeight - trigger.bottom;
+  reviewerSelect.classList.toggle("opens-up", below < 280 && trigger.top > below);
+});
+reviewerSelect.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !reviewerSelect.open) return;
+  event.preventDefault();
+  reviewerSelect.open = false;
+  reviewerTrigger.focus();
+});
+reviewerSelect.addEventListener("focusout", event => {
+  if (event.relatedTarget && !reviewerSelect.contains(event.relatedTarget)) reviewerSelect.open = false;
+});
+document.addEventListener("pointerdown", event => {
+  if (!reviewerSelect.contains(event.target)) reviewerSelect.open = false;
+});
 
 document.addEventListener("click", event => {
   const link = event.target.closest('a[href^="#"]');

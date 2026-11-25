@@ -135,7 +135,7 @@ def _reviewer(value: str) -> str:
 def _reviewer_display(provider: str) -> str:
     name = escape(_reviewer(provider))
     mark = f'<span class="reviewer-mark {provider}" aria-hidden="true"></span>' if provider in {"greptile", "proofline"} else ""
-    return f'<span class="reviewer-name">{mark}{name}</span>'
+    return f'<span class="reviewer-name">{mark}<span class="reviewer-label">{name}</span></span>'
 
 
 def _encoded(name: str) -> str:
@@ -308,7 +308,10 @@ class ReportBuilder:
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
                         f'{icon("pr")}<span class="option-label">{escape(label)}</span></option>')
         html.append(_SELECT_END)
-        html.append('<fieldset class="reviewer-picker"><legend>Reviewers <span id="reviewer-count"></span></legend>')
+        html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend>'
+                    '<details id="reviewer-select"><summary><span class="visually-hidden">Select reviewers</span>'
+                    '<span id="reviewer-preview"></span><span id="reviewer-count"></span></summary>'
+                    '<div class="reviewer-panel">')
         if len(providers) > 2:
             html.append('<div class="reviewer-actions"><button type="button" data-select-reviewers="all">Select all</button>'
                         '<button type="button" data-select-reviewers="none">Clear selection</button></div>')
@@ -316,7 +319,7 @@ class ReportBuilder:
         for provider in providers:
             html.append(f'<label class="reviewer-option"><input type="checkbox" name="reviewer" '
                         f'value="{escape(provider, quote=True)}" checked>{_reviewer_display(provider)}</label>')
-        html.append('</div></fieldset>')
+        html.append('</div></div></details></fieldset>')
         html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>')
         changes = {(item["base_sha"], item["head_sha"]): item["files"] for item in bundle.get("changes", [])}
         for key, group in groups.items():
