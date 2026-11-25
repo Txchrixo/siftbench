@@ -462,27 +462,42 @@ class ReportBuilder:
         elif not pair["claims"]:
             message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
             html.append(f'<p class="empty">{message}</p>')
-        summaries = [claim for claim in pair["claims"] if claim["decision"] == "out_of_scope"
-                     and (claim.get("source_object_id") or "").startswith("review:")]
-        findings = [claim for claim in pair["claims"] if claim not in summaries]
-        for subset, label in ((findings, "Captured findings"), (summaries, "Formal review summaries")):
+        messages = [claim for claim in pair["claims"] if claim["decision"] == "out_of_scope"
+                    and (claim.get("source_object_id") or "").startswith("review:")]
+
+        def file_position(claim: dict) -> tuple:
+            path, _, line = (claim.get("source_locator") or "").rpartition(":")
+            if path and re.fullmatch(r"[0-9]{1,9}", line):
+                return (0, path.casefold(), path, int(line), claim.get("diff_side") or "")
+            return (1,)
+
+        findings = sorted((claim for claim in pair["claims"] if claim not in messages), key=file_position)
+        for subset, label, tag in ((messages, "Review messages", "ul"), (findings, "Captured findings", "ol")):
             if not subset:
                 continue
-            html.append(f'<h4 class="claim-group">{label} <span>{len(subset)}</span></h4><ul class="claim-index">')
-            for claim in subset:
+            html.append(f'<h4 class="claim-group">{label} <span>{len(subset)}</span></h4>')
+            if tag == "ol" and len(subset) > 1 and file_position(subset[0])[0] == 0:
+                html.append('<p class="claim-order subtle">Ordered by file and line</p>')
+            html.append(f'<{tag} class="claim-index" role="list">')
+            for index, claim in enumerate(subset, start=1):
                 title, severity, body = review_text(claim["body"])
                 decision = claim["decision"]
-                fallback = "Review summary" if decision == "out_of_scope" else "Reviewer comment"
-                heading = inline(title) if title else fallback
+                is_message = tag == "ul"
+                heading = inline(title) if title else "Reviewer comment"
+                status = _label(decision)
+                rank = f'<span class="claim-rank" aria-hidden="true">{index}.</span>' if not is_message else ""
+                if is_message:
+                    heading = "Review announcement" if claim["body"].startswith("<!-- proofline:review-comment -->") else "Review message"
+                    status = "Excluded from scoring"
                 locator = escape(claim.get("source_locator") or "")
                 html.append(f'<li><a href="#claim-{claim["claim_id"]}" data-decision="{decision or "ungraded"}">'
-                            f'<span class="claim-name">{heading}</span><span class="claim-meta">'
-                            f'<span class="verdict {decision or "ungraded"}">{_label(decision)}</span>')
+                            f'<span class="claim-name">{rank}{heading}</span><span class="claim-meta">'
+                            f'<span class="verdict {decision or "ungraded"}">{status}</span>')
                 if locator:
                     html.append(f'<code>{locator}</code>')
                 html.append('</span></a></li>')
-                ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture)
-            html.append('</ul>')
+                ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture, status)
+            html.append(f'</{tag}>')
         if conversation := [url for raw in pair.get("conversation_links", []) if (url := _link(raw))]:
             html.append(f'<details class="review-publication"><summary>{icon("publication")}GitHub Conversation '
                         f'<span>{len(conversation)}</span></summary><p class="subtle">Additional reviewer comments outside the scored capture.</p>')
@@ -514,7 +529,7 @@ class ReportBuilder:
         html.append('</details>')
 
     @staticmethod
-    def _inspect(html: list[str], pair: dict, claim: dict, heading: str, severity: str, body: str, fixture: bool) -> None:
+    def _inspect(html: list[str], pair: dict, claim: dict, heading: str, severity: str, body: str, fixture: bool, status: str) -> None:
         claim_id = claim["claim_id"]
         decision = claim["decision"]
         locator = claim.get("source_locator") or ""
@@ -544,7 +559,7 @@ class ReportBuilder:
                     '<p class="subtle">Unformatted text captured with the review.</p>'
                     f'<pre>{escape(claim["body"])}</pre></details></div>')
         html.append('<div class="evaluation"><h4>Benchmark verdict</h4>'
-                    f'<p class="verdict {decision or "ungraded"}">{_label(decision)}</p>')
+                    f'<p class="verdict {decision or "ungraded"}">{status}</p>')
         if claim["rationale"]:
             html.append(f'<p class="rationale">{escape(claim["rationale"])}</p>')
         if claim["evidence"]:
