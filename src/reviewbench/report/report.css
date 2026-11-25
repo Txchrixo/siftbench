@@ -294,12 +294,16 @@ select {
 }
 select:hover { border-color: var(--text-secondary); }
 @supports (appearance: base-select) {
+  #compare-case, #reviewer-select > summary { min-block-size: 3.5rem; }
   select, ::picker(select) { appearance: base-select; }
   select { align-items: center; }
   select > button { min-width: 0; padding: 0; border: 0; font: inherit; color: inherit; background: none; }
   selectedcontent { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
   selectedcontent .option-check { display: none; }
-  selectedcontent .option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .option-label { display: grid; gap: .1rem; min-width: 0; }
+  .option-title, .option-meta { overflow-wrap: anywhere; }
+  .option-meta { color: var(--text-secondary); font-size: .75rem; font-weight: 600; }
+  selectedcontent :is(.option-title, .option-meta) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   select::picker-icon { display: none; }
   ::picker(select) {
     margin-block: .3rem;
@@ -319,7 +323,7 @@ select:hover { border-color: var(--text-secondary); }
     display: flex;
     align-items: center;
     gap: .45rem;
-    min-height: var(--control-size);
+    min-height: 3.5rem;
     padding: .45rem .55rem;
     border-radius: .35rem;
     white-space: normal;
@@ -619,6 +623,7 @@ details[open] > :not(summary) { animation: enter 150ms ease-out; }
   .overview-actions a { justify-content: center; padding-inline: var(--space-2); }
   .run-stats > div { padding: var(--space-3); }
   .filters { grid-template-columns: minmax(0, 1fr); }
+  selectedcontent .option-title { white-space: normal; }
   .reviewer-chip { gap: var(--space-1); padding-inline: var(--space-1); }
   .case-issues th:first-child { min-inline-size: 7.5rem; max-inline-size: 10rem; }
   .case-issues [data-issue-provider] { min-inline-size: 6.75rem; }

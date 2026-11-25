@@ -40,6 +40,13 @@ def _link(url: object) -> str | None:
     return None
 
 
+def _pull_number(url: str | None) -> str:
+    if not url or not _link(url):
+        return ""
+    match = re.fullmatch(r"/[^/]+/[^/]+/pull/([0-9]+)", urlsplit(url).path)
+    return match[1] if match else ""
+
+
 def _ratio(numerator: int, denominator: int) -> str:
     return f"{numerator}/{denominator} ({numerator / denominator:.0%})" if denominator else "N/A"
 
@@ -311,12 +318,25 @@ class ReportBuilder:
         for key, group in groups.items():
             case = next(iter(group.values()))
             title = case.get("case_title") or ""
-            label = f'{title} · {_label(case["condition"])}' if title else _case_display(case)
-            if title and case["repeat_index"]:
-                label += f' · Repeat {case["repeat_index"]}'
+            case_id = case["case_id"]
+            case_name = f"Case {case_id}" if case_id.isdigit() else _label(case_id)
+            numbers = {provider: _pull_number(pair.get("pr_url")) for provider, pair in group.items()} if not bundle["fixture"] else {}
+            known_numbers = {number for number in numbers.values() if number}
+            reference = case_name if title else ""
+            if len(known_numbers) == 1 and all(numbers.values()):
+                reference = f'PR #{next(iter(known_numbers))}'
+            elif known_numbers:
+                reference = ", ".join(f"{_reviewer(provider)} #{number}" for provider, number in numbers.items() if number)
+            completed = sum(pair["status"] == "completed" for pair in group.values())
+            details = [reference, _label(case["condition"])]
+            if case["repeat_index"]:
+                details.append(f'Repeat {case["repeat_index"]}')
+            details.append(f'{completed}/{len(group)} reviews completed')
+            metadata = " · ".join(filter(None, details))
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
                         f'<span class="option-check" aria-hidden="true">{icon("check")}</span>'
-                        f'{icon("pr")}<span class="option-label">{escape(label)}</span></option>')
+                        f'{icon("pr")}<span class="option-label"><span class="option-title">{escape(title or case_name)}</span> '
+                        f'<small class="option-meta">{escape(metadata)}</small></span></option>')
         html.append(f'</select>{_SELECT_CHEVRON}</span></label>')
         html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend>'
                     '<details id="reviewer-select"><summary><span class="visually-hidden">Select reviewers</span>'
@@ -454,9 +474,8 @@ class ReportBuilder:
             html.append(f'<span>{inline_count} inline {"comment" if inline_count == 1 else "comments"}</span>')
         pr_url = _link(pair.get("pr_url"))
         if pr_url and not fixture:
-            path = urlsplit(pair["pr_url"]).path
-            if re.fullmatch(r"/[^/]+/[^/]+/pull/[0-9]+", path):
-                number = path.rsplit("/", 1)[1]
+            if number := _pull_number(pair["pr_url"]):
+                path = urlsplit(pair["pr_url"]).path
                 html.append(f'<a href="{pr_url}">{icon("pr")}PR #{number}</a>'
                             f'<a href="https://github.com{escape(path, quote=True)}/files">{icon("diff")}Files changed</a>')
             else:
