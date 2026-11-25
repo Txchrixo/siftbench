@@ -287,12 +287,6 @@ class ReportBuilder:
             html.append("<p>No cases to compare.</p></section>")
             return
         pairs = [pair for group in groups.values() for pair in group.values()]
-        completed = sum(pair["status"] == "completed" for pair in pairs)
-        publications = sum(bool(pair.get("publication")) for pair in pairs)
-        html.append('<dl class="run-stats coverage-stats" aria-label="Coverage totals">'
-                    f'<div><dt>Completed attempts</dt><dd>{completed} / {len(pairs)}</dd></div>'
-                    f'<div><dt>Scored conditions</dt><dd>{len(shared)} / {len(groups)}</dd></div>'
-                    f'<div><dt>Audited publications</dt><dd>{publications}</dd></div></dl>')
         html.append('<div class="coverage-heading"><h2>Cases by reviewer</h2><p class="subtle">'
                     'Scored rows contribute to the shared results.</p>')
         if len(providers) > 1:

@@ -103,7 +103,6 @@ nav { gap: var(--space-1); }
 nav a { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-size); padding-inline: var(--space-3); border-radius: .35rem; color: var(--text-secondary); font-size: .875rem; font-weight: 700; text-decoration: none; }
 nav a:hover { color: var(--text-primary); }
 nav a[aria-current="location"] { color: var(--info); }
-nav .report-icon { color: var(--text-secondary); }
 .report-icon { display: inline-block; inline-size: 1rem; block-size: 1rem; flex: 0 0 auto; vertical-align: -.15em; }
 
 .overview-header {
@@ -166,8 +165,8 @@ nav .report-icon { color: var(--text-secondary); }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: var(--space-6);
 }
-.analysis-note, .run-stats, #scores, .scoring-scope { background: var(--secondary); }
-.analysis-note, .coverage-stats { border-inline-start: 2px solid var(--info); }
+.analysis-note, .run-stats, #scores, .scoring-scope, .claim-index a { background: var(--secondary); }
+.analysis-note, .claim-index a { border-inline-start: 2px solid var(--info); }
 #overview .run-stats, #scores, .scoring-scope { border-radius: .5rem; }
 .run-stats > div { display: grid; align-content: start; gap: var(--space-1); padding: var(--space-4) var(--panel-inset); }
 .run-stats > div + div { border-inline-start: 1px solid var(--border); }
@@ -489,8 +488,6 @@ select:hover { border-color: var(--text-secondary); }
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-height: var(--control-size);
-  border-inline-start: 2px solid var(--border);
-  border-radius: .25rem;
   padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   text-decoration: none;
@@ -502,8 +499,8 @@ select:hover { border-color: var(--text-secondary); }
   font-size: 1.25rem;
   line-height: 1;
 }
-.claim-index a:hover, .claim-index a[aria-current="true"] { background: var(--secondary); }
-.claim-index a[aria-current="true"] { border-inline-start-color: var(--info); }
+.claim-index a:hover, .claim-index a[aria-current="true"] { background: var(--border); }
+.claim-index a[aria-current="true"]::after { color: var(--info); }
 .claim-name { font-weight: 750; line-height: 1.4; }
 .claim-rank { display: inline-block; margin-inline-end: var(--space-2); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .claim-meta { gap: var(--space-1) var(--space-2); color: var(--text-secondary); font-size: .8125rem; }
