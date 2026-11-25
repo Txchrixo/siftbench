@@ -156,6 +156,7 @@ def compare_campaigns(before: dict, after: dict) -> dict:
                             "before_coverage": _scope(first), "after_coverage": _scope(second),
                             "before": _metrics([old for old, _ in matched]), "after": _metrics([new for _, new in matched]),
                             "cases": [{"case_id": key[0], "condition": key[1], "repeat_index": key[2],
+                                       "case_title": new.get("case_title") or old.get("case_title"),
                                        "before_status": old["status"], "after_status": new["status"],
                                        "before_pr": old.get("pr_url"), "after_pr": new.get("pr_url")}
                                       for key, old, new in zip(planned, first, second)]})

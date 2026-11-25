@@ -1,91 +1,242 @@
-"""Self-contained, private report for two runs on matched samples."""
+"""Operational and paired campaign views for self-contained reports."""
 
 from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import _csp_hash, _link, _ratio, _reviewer
+from . import (_SELECT_CHEVRON, _csp_hash, _encoded, _label, _link, _pull_number,
+               _ratio, _report_styles, _reviewer, _reviewer_display)
+from .icons import icon
+from ..analysis import campaign_metrics
 from ..manifest import canonical_json
 
 
-def _latency(stats: dict) -> str:
-    return f'{stats["p50"]} s median · {stats["p95"]} s p95 · n={stats["n"]}' if stats["n"] else "Unavailable"
+_METRICS = (
+    ("Precision", "Share of scored findings confirmed"),
+    ("Reference recall", "Expected findings detected"),
+    ("False positives", "Per graded pull request"),
+    ("Severe findings missed", "High or critical references on graded PRs"),
+    ("Review completion", "Time until the review was published"),
+    ("First verified finding", "Time until the first confirmed finding was published"),
+    ("Observed cost", "Median per attempt, in currency minor units"),
+)
 
 
-def _cost(metrics: dict) -> str:
-    return ", ".join(f'{currency} {totals["p50"]} minor units median · n={totals["n"]}'
-                     for currency, totals in metrics["observed_cost_minor"].items()) or "Unavailable"
+def _latency(stats: dict) -> tuple[str, str] | None:
+    if stats["n"]:
+        return f'{stats["p50"]:g} s', f'Median · p95 {stats["p95"]:g} s · n={stats["n"]}'
+    return None
 
 
-def metric_rows(metrics: dict) -> tuple[tuple[str, str], ...]:
+def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False) -> tuple[str, str] | None:
+    if not denominator:
+        return None
+    count = f"{numerator} / {denominator}"
+    return (f"{numerator / denominator:.0%}", count) if percent else (count, unit)
+
+
+def _values(metrics: dict) -> tuple:
     false = metrics["false_positives_per_graded_pr"]
     severe = metrics["high_severity"]
+    costs = tuple((f'{currency} {stats["p50"]:g}', f'n={stats["n"]}')
+                  for currency, stats in metrics["observed_cost_minor"].items())
     return (
-        ("Precision", _ratio(metrics["matched"] + metrics["novel"], metrics["adjudicated"])),
-        ("Reference recall", _ratio(metrics["matched"], metrics["expected"])),
-        ("False positives / graded PR", f'{false["false_positives"]} / {false["graded_prs"]}' if false["graded_prs"] else "Unavailable"),
-        ("High or critical references missed on graded PRs", f'{severe["missed"]} / {severe["expected"]}' if severe["expected"] else "Unavailable"),
-        ("Review completion latency", _latency(metrics["completion_seconds"])),
-        ("Time to first verified finding", _latency(metrics["first_verified_finding_seconds"])),
-        ("Observed cost per attempt", _cost(metrics)),
+        _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True),
+        _fraction(metrics["matched"], metrics["expected"], "", percent=True),
+        _fraction(false["false_positives"], false["graded_prs"], "False positives / graded PRs"),
+        _fraction(severe["missed"], severe["expected"], "Missed / expected"),
+        _latency(metrics["completion_seconds"]),
+        _latency(metrics["first_verified_finding_seconds"]),
+        costs or None,
     )
 
 
-def write_comparison(result: dict, out: Path) -> None:
-    root = files(__package__)
-    css = root.joinpath("theme.css").read_text(encoding="utf-8")
-    css += """
-      * { box-sizing: border-box; }
-      html { color-scheme: dark; }
-      body { margin: 0; background: var(--background); color: var(--text-primary); font: 15px/1.6 system-ui, sans-serif; }
-      main { max-width: 72rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
-      h1, h2, p { margin: 0 0 .75rem; }
-      p { color: var(--text-secondary); overflow-wrap: anywhere; }
-      section { margin-block: 2rem; }
-      .matrix { overflow: auto; background: var(--surface); border-radius: .4rem; }
-      table { width: 100%; min-width: 30rem; border-collapse: collapse; }
-      th, td { padding: .65rem .8rem; border-bottom: 1px solid var(--border); text-align: left; }
-      thead { color: var(--text-secondary); }
-      summary { cursor: pointer; padding-block: .6rem; }
-      a { color: var(--info); }
-      :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
-    """
-    html = ['<!doctype html><html lang="en"><meta charset="utf-8">',
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'sha256-{_csp_hash(css)}\'; base-uri \'none\'">',
-            f'<title>Compare campaigns | SiftBench</title><style>{css}</style><main><h1>Compare campaigns</h1>',
-            f'<p>{escape(result["before_run"])} → {escape(result["after_run"])}</p>',
-            f'<p>{result["planned_samples"]} pinned samples. Metrics include only the same samples completed in both runs for each reviewer. Coverage includes every sample planned for that reviewer in both runs.</p>']
-    if result["fixture"]:
-        html.append('<p>Fixture data</p>')
-    for pair in result["reviewers"]:
-        provider = escape(_reviewer(pair["reviewer"]))
-        html.append(f'<section><h2>{provider}</h2><p>{pair["completed_in_both"]} / {pair["planned_in_both"]} matched completions.</p>')
-        html.append('<div class="matrix" tabindex="0" role="region" aria-label="Matched metrics">'
-                    '<table><thead><tr><th scope="col">Metric</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>')
-        for (label, first), (_, second) in zip(metric_rows(pair["before"]), metric_rows(pair["after"]), strict=True):
-            html.append(f'<tr><th scope="row">{label}</th><td>{escape(first)}</td><td>{escape(second)}</td></tr>')
-        html.append('</tbody></table></div><details><summary>Per-sample coverage and source links</summary>'
-                    '<div class="matrix" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
-                    '<th scope="col">Case condition</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>')
-        for case in pair["cases"]:
-            label = escape(f'{case["case_id"]} · {case["condition"]} · Repeat {case["repeat_index"] + 1}')
-            html.append(f'<tr><th scope="row">{label}</th>')
-            for side in ("before", "after"):
-                status = escape(case[f"{side}_status"].replace("_", " ").capitalize())
-                link = _link(case[f"{side}_pr"])
-                html.append(f'<td>{status} · <a href="{link}">PR</a></td>' if link else f'<td>{status}</td>')
-            html.append('</tr>')
-        html.append('</tbody></table></div></details></section>')
-    html.append('<details><summary>Recorded reviewer settings</summary>')
+def _value(value: tuple | None) -> str:
+    if value is None:
+        return '<span class="metric-missing"><span aria-hidden="true">–</span><span class="visually-hidden">Unavailable</span></span>'
+    records = (value,) if isinstance(value[0], str) else value
+    return "".join(f'<span class="metric-reading"><strong>{escape(main)}</strong>'
+                   f'<small>{escape(detail)}</small></span>' for main, detail in records)
+
+
+def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool = False,
+            operational: bool = False) -> str:
+    measured = []
+    unavailable = []
+    for index, (label, note) in enumerate(_METRICS):
+        if operational and index < 2:
+            continue
+        readings = [column[index] for column in values]
+        observed = any(any(value is not None for value in reading) if paired else reading is not None
+                       for reading in readings)
+        if not observed:
+            unavailable.append(label)
+            continue
+        row = [f'<tr><th scope="row">{label}<span class="coverage-case">{note}</span></th>']
+        for reading in readings:
+            if paired:
+                before, after = reading
+                row.append('<td><div class="metric-transition">'
+                           f'<div><span class="metric-stage">Before</span>{_value(before)}</div>'
+                           f'{icon("compare")}<div><span class="metric-stage">After</span>{_value(after)}</div></div></td>')
+            else:
+                row.append(f'<td>{_value(reading)}</td>')
+        measured.append("".join(row) + "</tr>")
+    html = ['<div class="metric-panel">']
+    if measured:
+        if len(headers) > 1:
+            html.append('<p class="metric-scroll-hint subtle">Scroll sideways to see more reviewers.</p>')
+        html.append('<div class="scroll analysis-table" tabindex="0" role="region" aria-label="Metrics by reviewer">'
+                    '<table><thead><tr><th scope="col">Metric</th>')
+        for reviewer, detail in headers:
+            html.append(f'<th scope="col">{_reviewer_display(reviewer)}<span class="coverage-case">{escape(detail)}</span></th>')
+        html.extend(("</tr></thead><tbody>", *measured, "</tbody></table></div>"))
+    if unavailable:
+        html.append('<p class="metric-note"><strong>Unavailable for all reviewers</strong>'
+                    f'<span>{escape(" · ".join(unavailable))}</span></p>')
+    html.append("</div>")
+    return "".join(html)
+
+
+def _table(label: str, headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
+    columns = "".join(f'<th scope="col">{header}</th>' for header in headers)
+    body = "".join(f'<tr><th scope="row">{row[0]}</th>'
+                   + "".join(f'<td>{cell}</td>' for cell in row[1:]) + "</tr>" for row in rows)
+    return (f'<div class="scroll analysis-table" tabindex="0" role="region" aria-label="{label}">'
+            f'<table><thead><tr>{columns}</tr></thead><tbody>{body}</tbody></table></div>')
+
+
+def operational_metrics(bundle: dict) -> str:
+    metrics = campaign_metrics(bundle, reviewer_names=True)
+    reviewers = metrics["reviewers"]
+    headers = [(row["reviewer"], f'{row["operations"]["completed"]}/{row["operations"]["planned"]} completed')
+               for row in reviewers]
+    values = [_values(row["operations"]) for row in reviewers]
+    html = ['<section id="operational-metrics" class="analysis-section" aria-labelledby="operations-heading">'
+            '<div class="analysis-heading"><h2 id="operations-heading">Operational metrics</h2>'
+            '<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.</p></div>',
+            _matrix(headers, values, operational=True)]
+    repeats = [(_reviewer_display(row["reviewer"]), str(repeat["repeat_index"] + 1),
+                f'{repeat["completed"]} / {repeat["planned"]}', _ratio(repeat["matched"], repeat["expected"]))
+               for row in reviewers if len(row["repeats"]) > 1 for repeat in row["repeats"]]
+    if repeats:
+        html.append('<details class="analysis-disclosure"><summary>Results by repetition</summary>'
+                    + _table("Results by repetition", ("Reviewer", "Repeat", "Completed", "Reference recall"), repeats)
+                    + "</details>")
+    if metrics["pairwise"]:
+        rows = []
+        for pair in metrics["pairwise"]:
+            peers = pair["reviewers"]
+            rows.append((" <span class='subtle'>/</span> ".join(_reviewer_display(peer["reviewer"]) for peer in peers),
+                         f'{pair["completed_in_both"]} / {pair["planned_in_both"]}',
+                         " / ".join(_ratio(peer["metrics"]["matched"] + peer["metrics"]["novel"],
+                                           peer["metrics"]["adjudicated"]) for peer in peers),
+                         " / ".join(_ratio(peer["metrics"]["matched"], peer["metrics"]["expected"]) for peer in peers)))
+        html.append('<details class="analysis-disclosure"><summary>Pairwise scores on matched samples</summary>'
+                    + _table("Pairwise scores", ("Reviewer pair", "Matched samples", "Precision", "Reference recall"), rows)
+                    + "</details>")
+    return "".join(html) + "</section>"
+
+
+def _attempt(case: dict, stage: str, provider: str, *, fixture: bool) -> str:
+    state = case[f"{stage}_status"]
+    raw_url = case[f"{stage}_pr"]
+    href = None if fixture else _link(raw_url)
+    source = ""
+    if href:
+        number = _pull_number(raw_url)
+        label = f"PR #{number}" if number else "Pull request"
+        accessible = escape(f'{stage.capitalize()} · {_reviewer(provider)} · {label} · {case.get("case_title") or case["case_id"]}', quote=True)
+        source = f'<a href="{href}" aria-label="{accessible}">{label}{icon("external")}</a>'
+    return (f'<div class="sample-attempt"><span class="metric-stage">{stage.capitalize()}</span>'
+            f'<span class="state {escape(state, quote=True)}">{escape(_label(state))}</span>{source}</div>')
+
+
+def _coverage(result: dict) -> str:
+    html = ['<section id="campaign-coverage" class="analysis-section" aria-labelledby="campaign-coverage-title">'
+            '<div class="analysis-heading"><h2 id="campaign-coverage-title">Pull request coverage</h2>'
+            '<p class="subtle">Check which reviews completed and open their original GitHub pull requests.</p></div>',
+            '<div class="coverage-filters" hidden><div><label for="coverage-reviewer">Reviewer</label>'
+            '<span class="select-field"><select id="coverage-reviewer">']
+    for index, row in enumerate(result["reviewers"]):
+        html.append(f'<option value="{index}">{escape(_reviewer(row["reviewer"]))}</option>')
+    html.append(f'</select>{_SELECT_CHEVRON}</span></div>'
+                '<label class="coverage-filter-check"><input type="checkbox" id="coverage-changes">Only status changes</label></div>'
+                '<p class="visually-hidden" id="coverage-filter-status" role="status"></p>')
+    repeated = any(case["repeat_index"] for row in result["reviewers"] for case in row["cases"])
+    for index, row in enumerate(result["reviewers"]):
+        provider = row["reviewer"]
+        count = sum(case["before_status"] != case["after_status"] for case in row["cases"])
+        html.append(f'<div class="sample-panel" data-reviewer-index="{index}"><div class="sample-panel-heading">'
+                    f'<h3>{_reviewer_display(provider)}</h3><span class="subtle">{count} status {"change" if count == 1 else "changes"}</span></div>'
+                    '<ul class="sample-list">')
+        for case in row["cases"]:
+            case_id = case["case_id"]
+            title = case.get("case_title") or (f"Case {case_id}" if case_id.isdigit() else _label(case_id))
+            context = _label(case["condition"])
+            if repeated:
+                context += f' · Repeat {case["repeat_index"] + 1}'
+            changed = case["before_status"] != case["after_status"]
+            html.append(f'<li class="sample-row" data-changed="{str(changed).lower()}">'
+                        f'<div class="sample-title">{icon("pr")}<div><strong>{escape(title)}</strong>'
+                        f'<span class="coverage-case">{escape(context)}</span></div></div>'
+                        + _attempt(case, "before", provider, fixture=result["fixture"])
+                        + _attempt(case, "after", provider, fixture=result["fixture"]) + "</li>")
+        html.append('</ul><p class="sample-empty subtle" hidden>No matching pull requests.</p></div>')
+    return "".join(html) + "</section>"
+
+
+def _settings(result: dict) -> str:
+    html = ['<details class="analysis-disclosure" id="campaign-settings"><summary>Recorded reviewer settings</summary>'
+            '<div class="campaign-pair">']
     for side in ("before", "after"):
-        html.append(f'<h2>{side.capitalize()}</h2>')
+        html.append(f'<section><h3>{side.capitalize()}</h3>')
         if not result[f"{side}_configuration"]:
-            html.append('<p>Unavailable in the source bundle.</p>')
+            html.append('<p class="subtle">Unavailable in this source bundle.</p>')
         for row in result[f"{side}_configuration"]:
-            settings = ' · '.join(f'{name.replace("_", " ")}: {value if value is not None else "unavailable"}' for name, value in row.items())
-            html.append(f'<p>{escape(settings)}</p>')
-    html.append('</details></main></html>')
+            html.append(f'<div class="recorded-config">{_reviewer_display(row["provider"])}'
+                        f'<span class="coverage-case">{escape(_label(row.get("condition")))}</span><dl>')
+            for name, key in (("Trigger", "trigger"), ("Completion signal", "completion_policy"),
+                              ("Check", "check"), ("Vendor version", "vendor_version")):
+                html.append(f'<div><dt>{name}</dt><dd>{escape(str(row[key] or "Unavailable"))}</dd></div>')
+            html.append("</dl></div>")
+        html.append("</section>")
+    return "".join(html) + "</div></details>"
+
+
+def write_comparison(result: dict, out: Path) -> None:
+    css = _report_styles(operational=True)
+    script = files(__package__).joinpath("analysis.js").read_text(encoding="utf-8")
+    policy = (f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; "
+              "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
+    html = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f'<meta http-equiv="Content-Security-Policy" content="{policy}">',
+            f'<title>Compare campaigns | SiftBench</title><style>{css}</style></head>',
+            '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
+            f'<a class="brand" href="#main"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
+            f'<nav aria-label="Campaign comparison"><a href="#matched-metrics">{icon("compare")}Metrics</a>'
+            f'<a href="#campaign-coverage">{icon("coverage")}Coverage</a></nav></div></header>',
+            '<main id="main" class="campaign-comparison" tabindex="-1"><header class="analysis-heading campaign-heading">',
+            '<h1>Compare campaigns</h1>',
+            f'<p class="subtle">{result["planned_samples"]} pinned samples across {len(result["reviewers"])} shared '
+            f'{"reviewers" if len(result["reviewers"]) != 1 else "reviewer"}'
+            f'{" · Fixture data" if result["fixture"] else ""}</p></header><dl class="campaign-pair">']
+    for side in ("before", "after"):
+        coverage = [row[f"{side}_coverage"] for row in result["reviewers"]]
+        done, planned = sum(row["completed"] for row in coverage), sum(row["planned"] for row in coverage)
+        html.append(f'<div><dt>{side.capitalize()}</dt><dd><code>{escape(result[f"{side}_run"])}</code>'
+                    f'<span class="campaign-total"><strong>{done} / {planned}</strong> completed in shared scope</span></dd></div>')
+    html.append('</dl><section id="matched-metrics" class="analysis-section" aria-labelledby="matched-metrics-title">'
+                '<div class="analysis-heading"><h2 id="matched-metrics-title">Matched metrics</h2>'
+                '<p class="subtle">Each reviewer is compared on the same pull requests and repetitions completed in both campaigns.</p></div>')
+    reviewers = result["reviewers"]
+    headers = [(row["reviewer"], f'{row["completed_in_both"]} / {row["planned_in_both"]} matched completions') for row in reviewers]
+    values = [tuple(zip(_values(row["before"]), _values(row["after"]), strict=True)) for row in reviewers]
+    html.extend((_matrix(headers, values, paired=True), "</section>", _coverage(result), _settings(result),
+                 f'</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
+                 f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>',
+                 f"<script>{script}</script></body></html>"))
     out.mkdir(parents=True, exist_ok=True)
     (out / "comparison.json").write_bytes(canonical_json(result) + b"\n")
     (out / "comparison.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")

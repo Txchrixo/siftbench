@@ -175,6 +175,19 @@ def _csp_hash(value: str) -> str:
     return base64.b64encode(hashlib.sha256(value.encode()).digest()).decode("ascii")
 
 
+def _report_styles(*, operational: bool = False, assistants: bool = False) -> str:
+    root = files(__package__)
+    names = ("theme.css", "report.css", "analysis.css") if operational else ("theme.css", "report.css")
+    css = "".join(root.joinpath(name).read_text(encoding="utf-8") for name in names)
+    css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
+    for reviewer in ("greptile", "proofline"):
+        css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.png"))
+    if assistants:
+        for assistant in ("openai", "claude", "mistral"):
+            css = css.replace(f"__ASK_{assistant.upper()}__", _encoded(f"assistant-{assistant}.svg"))
+    return css
+
+
 def _score_rows(metrics: dict) -> list[tuple[str, ...]]:
     return [
         (provider, _ratio(counts["matched"] + counts["novel"], counts["adjudicated"]),
@@ -210,12 +223,8 @@ class ReportBuilder:
             md.append(f"- {_case_name(pair)} / {pair['provider_id']}: {_label(pair['status'])}")
 
         root = files(__package__)
-        css = root.joinpath("theme.css").read_text(encoding="utf-8") + root.joinpath("report.css").read_text(encoding="utf-8")
-        css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
-        for reviewer in ("greptile", "proofline"):
-            css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.png"))
-        for assistant in ("openai", "claude", "mistral"):
-            css = css.replace(f"__ASK_{assistant.upper()}__", _encoded(f"assistant-{assistant}.svg"))
+        operational = bool(rows) and (bundle.get("operational_schema_version") == 1 or any("cost" in pair for pair in bundle["pairs"]))
+        css = _report_styles(operational=operational, assistants=True)
         script = root.joinpath("report.js").read_text(encoding="utf-8")
         policy = f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
         html = ["<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
@@ -249,7 +258,7 @@ class ReportBuilder:
         if isinstance(bundle.get("analysis"), str) and bundle["analysis"]:
             html.append(f'<p class="analysis-note"><strong>Analysis note</strong> {escape(bundle["analysis"])}</p>')
         self._scores(html, metrics["shared"], rows, case_titles)
-        if rows and (bundle.get("operational_schema_version") == 1 or any("cost" in pair for pair in bundle["pairs"])):
+        if operational:
             self._operations(html, bundle)
         html.append('</section>')
         self._coverage(html, groups, providers, set(metrics["shared"]), fixture=bundle["fixture"])
@@ -267,39 +276,9 @@ class ReportBuilder:
 
     @staticmethod
     def _operations(html: list[str], bundle: dict) -> None:
-        from ..analysis import campaign_metrics
-        from .comparison import metric_rows
+        from .comparison import operational_metrics
 
-        metrics = campaign_metrics(bundle, reviewer_names=True)
-        html.append('<section id="operational-metrics"><h2>Operational metrics</h2>'
-                    '<p class="subtle">Covers all planned attempts, including repetitions. Latency uses observed publication timestamps. Cost requires measured billing evidence.</p>')
-        for row in metrics["reviewers"]:
-            html.append(f'<details class="review-publication"><summary>{_reviewer_display(row["reviewer"])}</summary>')
-            html.append('<dl class="metric-guide">')
-            for label, value in metric_rows(row["operations"])[2:]:
-                html.append(f'<div><dt>{label}</dt><dd>{escape(value)}</dd></div>')
-            if len(row["repeats"]) > 1:
-                for repeat in row["repeats"]:
-                    label = f'Repeat {repeat["repeat_index"] + 1}'
-                    value = (f'{repeat["completed"]}/{repeat["planned"]} completed · '
-                             f'{_ratio(repeat["matched"], repeat["expected"])} reference recall')
-                    html.append(f'<div><dt>{label}</dt><dd>{escape(value)}</dd></div>')
-            html.append('</dl></details>')
-        if metrics["pairwise"]:
-            html.append('<details class="review-publication"><summary>Pairwise scores on matched samples</summary>'
-                        '<div class="scroll" tabindex="0" role="region" aria-label="Pairwise scores"><table><thead><tr>'
-                        '<th scope="col">Reviewer pair</th><th scope="col">Matched samples</th>'
-                        '<th scope="col">Precision</th><th scope="col">Reference recall</th></tr></thead><tbody>')
-            for row in metrics["pairwise"]:
-                reviewers = row["reviewers"]
-                names = " / ".join(_reviewer(item["reviewer"]) for item in reviewers)
-                scores = [dict(metric_rows(item["metrics"])) for item in reviewers]
-                precision = " / ".join(score["Precision"] for score in scores)
-                recall = " / ".join(score["Reference recall"] for score in scores)
-                html.append(f'<tr><th scope="row">{escape(names)}</th><td>{row["completed_in_both"]}/{row["planned_in_both"]}</td>'
-                            f'<td>{escape(precision)}</td><td>{escape(recall)}</td></tr>')
-            html.append('</tbody></table></div></details>')
-        html.append('</section>')
+        html.append(operational_metrics(bundle))
 
     @staticmethod
     def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int) -> None:

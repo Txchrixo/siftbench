@@ -50,6 +50,9 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert main(["--state-dir", str(state), "report", "--run-id", "pilot", "--out", str(first)]) == 0
     html = (first / "report.html").read_text(encoding="utf-8")
     assert "Fixture run" in html and "&lt;script&gt;" in html and html.count("<script>") == 1
+    operations = html.split('id="operational-metrics"', 1)[1].split("</section>", 1)[0]
+    assert operations.count("Unavailable for all reviewers") == 1
+    assert 'aria-label="Metrics by reviewer"' in operations
     assert "#discussion_r1" in html and "Expected ID 42" in html
     assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html
     assert f'Base <code>{manifest.cases[0].base_sha}</code>' in html
@@ -65,7 +68,10 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert "adjudicator" not in public and "reviewer-1" in public and manifest.cases[0].head_sha not in public
     assert main(["compare-runs", "--before", str(first / "results.json"), "--after", str(first / "results.json"),
                  "--out", str(tmp_path / "compare")]) == 0
-    assert (tmp_path / "compare" / "comparison.html").read_text(encoding="utf-8").count("1 / 1 matched completions") == 2
+    comparison = (tmp_path / "compare" / "comparison.html").read_text(encoding="utf-8")
+    assert comparison.count("1 / 1 matched completions") == 2
+    assert "Only status changes" in comparison
+    assert comparison.count(manifest.cases[0].title) == 2
     replay = tmp_path / "replay"
     assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0
     for name in ("report.html", "summary.md", "results.json"):
