@@ -353,10 +353,11 @@ select:hover { border-color: var(--text-secondary); }
 .diff-annotations { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--secondary); }
 .case-files :is(.unified-patch, .split-patch) { max-block-size: min(64rem, 88dvh); overflow: auto; }
 .case-files .diff-lines { max-height: none; overflow: visible; }
-.diff-comment { min-inline-size: 0; margin: 0; border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); font: .875rem/1.55 Manrope, system-ui, sans-serif; }
-.diff-comment > summary { gap: var(--space-2); border-radius: inherit; padding-inline: var(--space-2); white-space: nowrap; }
+.diff-comment { min-inline-size: 0; margin: 0; overflow: clip; border: 1px solid var(--text-muted); border-radius: .5rem; background: var(--surface); color: var(--text-primary); font: .875rem/1.55 Manrope, system-ui, sans-serif; }
+.diff-comment > summary { gap: var(--space-2); border-radius: 0; padding-inline: var(--space-2); white-space: nowrap; }
+.diff-comment > summary:focus-visible { outline-offset: -3px; border-radius: .375rem; }
 .diff-comment > summary::before { flex: none; }
-.diff-comment[open] > summary { border-radius: .5rem .5rem 0 0; border-bottom: 1px solid var(--border); }
+.diff-comment[open] > summary { border-bottom: 1px solid var(--border); }
 .diff-comment > summary .reviewer-name { flex: 0 0 auto; max-inline-size: 44%; }
 .diff-comment > summary .reviewer-label, .diff-comment-title { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .diff-comment > summary span { margin-inline-start: 0; }
