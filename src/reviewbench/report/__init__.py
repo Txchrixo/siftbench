@@ -318,7 +318,7 @@ class ReportBuilder:
         html.append('<div class="reviewer-options">')
         for provider in providers:
             html.append(f'<label class="reviewer-option"><input type="checkbox" name="reviewer" '
-                        f'value="{escape(provider, quote=True)}" checked>{_reviewer_display(provider)}</label>')
+                        f'value="{escape(provider, quote=True)}" checked>{icon("check")}{_reviewer_display(provider)}</label>')
         html.append('</div></div></details></fieldset>')
         html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>')
         html.append('<div class="comparison-tabs" aria-label="Comparison views" hidden>')
