@@ -45,6 +45,10 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert "#discussion_r1" in html and "Expected ID 42" in html
     assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html
     assert f'Base <code>{manifest.cases[0].base_sha}</code>' in html
+    preview = html.split('<textarea id="benchmark-prompt"', 1)[1].split('</textarea>', 1)[0]
+    assert "2 of 2 review attempts completed" in preview and "This report uses fixture data" in preview
+    assert "A row with the same timestamp" not in preview and "Expected ID 42" not in preview
+    assert manifest.cases[0].head_sha not in preview and "https://" not in preview
     assert json.loads((first / "results.json").read_bytes()) == bundle
     replay = tmp_path / "replay"
     assert main(["report", "--bundle", str(first / "results.json"), "--out", str(replay)]) == 0

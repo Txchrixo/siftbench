@@ -192,6 +192,8 @@ class ReportBuilder:
         css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
         for reviewer in ("greptile", "proofline"):
             css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.png"))
+        for assistant in ("openai", "claude", "mistral"):
+            css = css.replace(f"__ASK_{assistant.upper()}__", _encoded(f"assistant-{assistant}.svg"))
         script = root.joinpath("report.js").read_text(encoding="utf-8")
         policy = f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
         html = ["<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
@@ -207,7 +209,9 @@ class ReportBuilder:
                 '<div><h1>Campaign overview</h1>'
                 f'<p class="run-meta"><span>{scope}</span><code>{escape(bundle["run_id"])}</code></p></div>'
                 f'<div class="overview-actions"><a href="#coverage">{icon("coverage")}Check coverage</a>'
-                f'<a href="#comparison">{icon("compare")}Compare findings</a></div></header>']
+                f'<a href="#comparison">{icon("compare")}Compare findings</a>'
+                f'<button id="ask-benchmark" type="button" aria-haspopup="dialog" hidden>{icon("ask")}Ask about this benchmark</button>'
+                '</div></header>']
         groups: dict[str, dict[str, dict]] = {}
         for pair in bundle["pairs"]:
             groups.setdefault(_case_key(pair), {})[pair["provider_id"]] = pair
@@ -226,6 +230,9 @@ class ReportBuilder:
         html.append('</section>')
         self._coverage(html, groups, providers, set(metrics["shared"]), fixture=bundle["fixture"])
         self._comparison(html, groups, providers, bundle)
+        if rows:
+            html.append(f'<!--\n{root.joinpath("LICENSE-LobeIcons.txt").read_text(encoding="utf-8")}\n-->')
+            self._ask(html, bundle, rows, metrics["shared"], completed)
         html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
                     f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
         html.append(f"<script>{script}</script></body></html>")
@@ -233,6 +240,44 @@ class ReportBuilder:
         (output / "report.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
         (output / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
         (output / "OFL-Manrope.txt").write_bytes(root.joinpath("OFL-Manrope.txt").read_bytes())
+
+    @staticmethod
+    def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int) -> None:
+        pairs = bundle["pairs"]
+        publications = [pair for pair in pairs if pair.get("publication")]
+        prompt = [
+            "Help me interpret this SiftBench comparison of AI code reviewers.", "",
+            f"{completed} of {len(pairs)} review attempts completed across {len(rows)} reviewers.",
+            f"Scores cover {len(shared)} shared case conditions. The report scores only conditions completed by every reviewer, and excludes repeats.",
+        ]
+        if bundle["fixture"]:
+            prompt.append("This report uses fixture data and does not measure live reviewer performance.")
+        if publications:
+            included = sum(pair["status"] == "completed" for pair in publications)
+            prompt.append(f"A separate publication audit found {len(publications)} additional publications. This report treats {included} of those as completed attempts.")
+        prompt.extend(["", "Aggregated scores"])
+        for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in rows:
+            prompt.append(f"- {_reviewer(provider)} · Precision {precision} · Reference recall {recall} · Additional findings {novel} · "
+                          f"False positives {false} · Justified context requests {context} · Duplicates {duplicates} · Unresolved {unresolved} · Ungraded {ungraded}")
+        prompt.extend(["", "Precision is the share of scored findings confirmed. Reference recall is the share of expected findings found. "
+                       "Additional findings are verified findings outside the expected set.", "",
+                       "What differences matter in this run, and what conclusions would require more evidence? "
+                       "Use only the figures and scope above. Keep conclusions specific to the cases tested."])
+        preview = escape("\n".join(prompt))
+        html.append('<dialog id="benchmark-dialog" class="benchmark-dialog" aria-labelledby="benchmark-dialog-title">'
+                    '<div class="ask-heading"><h2 id="benchmark-dialog-title">Ask about this benchmark</h2>'
+                    f'<button id="close-benchmark-dialog" type="button" aria-label="Close" autofocus>{icon("close")}</button></div>'
+                    '<p class="subtle">Copy the aggregate results below, then paste them into the assistant of your choice.</p>'
+                    '<label for="benchmark-prompt">Prompt preview</label>'
+                    f'<textarea id="benchmark-prompt" readonly rows="10" spellcheck="false">{preview}</textarea>'
+                    '<div class="ask-copy"><button id="copy-benchmark-prompt" type="button">Copy prompt</button>'
+                    '<p id="benchmark-copy-status" class="subtle" role="status"></p></div>'
+                    '<div class="ask-destinations" aria-label="Assistants" role="group">')
+        for brand, name, url in (("openai", "ChatGPT", "https://chatgpt.com/"), ("claude", "Claude", "https://claude.ai/new"),
+                                 ("mistral", "Mistral Vibe", "https://chat.mistral.ai/")):
+            html.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer">'
+                        f'<span class="assistant-mark {brand}" aria-hidden="true"></span>{name}{icon("external")}</a>')
+        html.append('</div></dialog>')
 
     @staticmethod
     def _coverage(html: list[str], groups: dict, providers: list[str], shared: set[tuple[str, str]], *, fixture: bool) -> None:

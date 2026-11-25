@@ -230,5 +230,29 @@ document.addEventListener("click", event => {
   }
 });
 window.addEventListener("hashchange", () => showRoute());
+
+const ask = document.querySelector("#ask-benchmark");
+const dialog = document.querySelector("#benchmark-dialog");
+if (typeof dialog?.showModal === "function") {
+  const prompt = document.querySelector("#benchmark-prompt");
+  const copyStatus = document.querySelector("#benchmark-copy-status");
+  ask.hidden = false;
+  ask.addEventListener("click", () => {
+    copyStatus.textContent = "";
+    dialog.showModal();
+  });
+  dialog.querySelector("#close-benchmark-dialog").addEventListener("click", () => dialog.close());
+  dialog.querySelector("#copy-benchmark-prompt").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(prompt.value);
+      copyStatus.textContent = "Prompt copied.";
+    } catch {
+      prompt.focus();
+      prompt.select();
+      copyStatus.textContent = "Text selected. Use your device’s copy command.";
+    }
+  });
+}
+
 showComparison();
 showRoute(Boolean(location.hash));
