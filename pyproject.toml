@@ -20,7 +20,7 @@ reviewbench = "reviewbench.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"reviewbench.report" = ["*.css", "*.js", "*.woff2", "*.svg", "*.txt"]
+"reviewbench.report" = ["*.css", "*.js", "*.woff2", "*.svg", "*.txt", "*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

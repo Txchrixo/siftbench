@@ -1,9 +1,10 @@
 const controls = document.querySelector("#comparison-controls");
 const cases = document.querySelector("#compare-case");
-const left = document.querySelector("#compare-left");
-const right = document.querySelector("#compare-right");
+const reviewerInputs = [...controls.querySelectorAll('input[name="reviewer"]')];
 const grid = document.querySelector(".comparison-grid");
 const panels = [...grid.querySelectorAll("[data-case]")];
+const contexts = [...document.querySelectorAll("[data-context-case]")];
+const issueColumns = [...document.querySelectorAll("[data-issue-provider]")];
 const inspections = document.querySelector(".inspection-list");
 const details = [...inspections.querySelectorAll("[data-pair]")];
 const empty = document.querySelector("#comparison-empty");
@@ -13,18 +14,19 @@ const views = [...document.querySelectorAll("[data-report-view]")];
 const navigation = [...document.querySelectorAll('nav[aria-label="Report"] a')];
 const overview = document.querySelector("#overview");
 let currentView = overview;
-let previousReviewers = [left.value, right.value];
 let activeClaim = "";
 
 function showComparison(announce = false, requestedClaim = "") {
-  previousReviewers = [left.value, right.value];
-  const visible = previousReviewers.filter(Boolean).map(provider =>
+  const selectedReviewers = reviewerInputs.filter(input => input.checked).map(input => input.value);
+  const visible = selectedReviewers.map(provider =>
     panels.find(panel => panel.dataset.case === cases.value && panel.dataset.provider === provider)
   ).filter(Boolean);
   for (const panel of panels) {
     panel.hidden = !visible.includes(panel);
   }
   for (const panel of visible) grid.append(panel);
+  for (const context of contexts) context.hidden = context.dataset.contextCase !== cases.value;
+  for (const column of issueColumns) column.hidden = !selectedReviewers.includes(column.dataset.issueProvider);
   grid.dataset.visible = visible.length;
   empty.hidden = visible.length > 0;
   const caseOption = cases.selectedOptions[0];
@@ -61,7 +63,8 @@ function showRoute(scroll = true) {
   const panel = target?.dataset.pair ? document.getElementById(target.dataset.pair) : target?.closest("[data-case]");
   if (panel) {
     cases.value = panel.dataset.case;
-    if (![left.value, right.value].includes(panel.dataset.provider)) left.value = panel.dataset.provider;
+    const reviewer = reviewerInputs.find(input => input.value === panel.dataset.provider);
+    if (reviewer) reviewer.checked = true;
     showComparison(false, target.dataset.pair ? `#${target.id}` : "");
   }
   if (scroll) {
@@ -73,13 +76,7 @@ function showRoute(scroll = true) {
 
 if (panels.length) {
   controls.hidden = false;
-  controls.addEventListener("change", event => {
-    if (left.value && left.value === right.value) {
-      if (event.target === right) left.value = previousReviewers[1];
-      else right.value = previousReviewers[0];
-    }
-    showComparison(true);
-  });
+  controls.addEventListener("change", () => showComparison(true));
 }
 
 document.addEventListener("click", event => {

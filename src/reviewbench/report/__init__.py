@@ -11,7 +11,9 @@ from ..grading import DECISIONS, EVIDENCE_TYPES, ScoreCalculator
 from ..manifest import canonical_json, digest, identifier
 from ..store import StoreError
 from .comment import blocks, inline, review_text
-from .diff import render_diff
+from .context import publication_text, validate_context
+from .diff import render_diff, render_file_patch
+from .issues import issue_rows
 
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -43,6 +45,12 @@ def _ratio(numerator: int, denominator: int) -> str:
 
 def _label(value: str | None) -> str:
     return "Ungraded" if value is None else value.replace("_", " ").capitalize()
+
+
+def _review_status(pair: dict) -> str:
+    if pair.get("publication"):
+        return "Verified publication" if pair["status"] == "completed" else "Formal review missing"
+    return _label(pair["status"])
 
 
 def _validate(bundle: dict) -> None:
@@ -97,6 +105,7 @@ def _validate(bundle: dict) -> None:
                         raise StoreError("Invalid evidence or digest mismatch")
             if any(not isinstance(finding["matching_criteria"], str) for finding in pair["expected"]):
                 raise StoreError("Expected findings need text criteria")
+        validate_context(bundle)
     except (AttributeError, KeyError, TypeError) as error:
         raise StoreError("Invalid results bundle structure") from error
 
@@ -120,6 +129,12 @@ def _case_display(pair: dict) -> str:
 
 def _reviewer(value: str) -> str:
     return {"proofline": "Proofline", "greptile": "Greptile", "coderabbit": "CodeRabbit"}.get(value, value)
+
+
+def _reviewer_display(provider: str) -> str:
+    name = escape(_reviewer(provider))
+    mark = f'<span class="reviewer-mark {provider}" aria-hidden="true"></span>' if provider in {"greptile", "proofline"} else ""
+    return f'<span class="reviewer-name">{mark}{name}</span>'
 
 
 def _encoded(name: str) -> str:
@@ -167,6 +182,8 @@ class ReportBuilder:
         root = files(__package__)
         css = root.joinpath("theme.css").read_text(encoding="utf-8") + root.joinpath("report.css").read_text(encoding="utf-8")
         css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
+        for reviewer in ("greptile", "proofline"):
+            css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.png"))
         script = root.joinpath("report.js").read_text(encoding="utf-8")
         policy = f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
         html = ["<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
@@ -199,7 +216,7 @@ class ReportBuilder:
                     '<a href="#comparison"><strong>Compare findings</strong>'
                     '<span>Pick a case and trace a verdict to the original comment and evidence.</span></a></div></section>')
         self._coverage(html, groups, providers)
-        self._comparison(html, groups, providers, bundle["fixture"])
+        self._comparison(html, groups, providers, bundle)
         html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
                     f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
         html.append(f"<script>{script}</script></body></html>")
@@ -217,7 +234,7 @@ class ReportBuilder:
             return
         html.append('<div class="scroll" tabindex="0" role="region" aria-label="Case coverage"><table><thead><tr>'
                     '<th scope="col">Case and condition</th>')
-        html.extend(f'<th scope="col">{escape(_reviewer(provider))}</th>' for provider in providers)
+        html.extend(f'<th scope="col">{_reviewer_display(provider)}</th>' for provider in providers)
         html.append("</tr></thead><tbody>")
         for group in groups.values():
             first = next(iter(group.values()))
@@ -230,7 +247,7 @@ class ReportBuilder:
             for provider in providers:
                 pair = group.get(provider)
                 if pair:
-                    status = _label(pair["status"])
+                    status = _review_status(pair)
                     label = escape(f"{_reviewer(provider)}, {case}: {status}", quote=True)
                     html.append(f'<td><a class="state {pair["status"]}" href="#pair-{pair["pair_id"]}" '
                                 f'aria-label="{label}">{status}</a></td>')
@@ -274,7 +291,7 @@ class ReportBuilder:
             html.append('</tr>')
         html.append('</tbody></table></div>')
 
-    def _comparison(self, html: list[str], groups: dict, providers: list[str], fixture: bool) -> None:
+    def _comparison(self, html: list[str], groups: dict, providers: list[str], bundle: dict) -> None:
         html.append('<section id="comparison" data-report-view tabindex="-1"><div class="view-heading"><h1>Compare findings</h1>'
                     '<p class="view-intro">Choose a case and reviewers. Select any finding to see the code, original review, and benchmark verdict.</p></div>'
                     '<div id="comparison-controls" class="filters" hidden><label>Case and condition'
@@ -288,19 +305,24 @@ class ReportBuilder:
             html.append(f'<option value="{escape(key, quote=True)}" data-title="{escape(title, quote=True)}">'
                         f'{escape(label)}</option>')
         html.append(_SELECT_END)
-        for title, field, selected in (("First reviewer", "left", 0), ("Second reviewer", "right", 1)):
-            html.append(f'<label>{title}<span class="select-field"><select id="compare-{field}">'
-                        '<option value="">None</option>')
-            for index, provider in enumerate(providers):
-                selection = " selected" if selected == index else ""
-                html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(_reviewer(provider))}</option>')
-            html.append(_SELECT_END)
-        html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>'
-                    '<div class="comparison-grid">')
+        html.append('<fieldset class="reviewer-picker"><legend>Reviewers</legend><div class="reviewer-options">')
+        for provider in providers:
+            html.append(f'<label class="reviewer-option"><input type="checkbox" name="reviewer" '
+                        f'value="{escape(provider, quote=True)}" checked>{_reviewer_display(provider)}</label>')
+        html.append('</div></fieldset>')
+        html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>')
+        changes = {(item["base_sha"], item["head_sha"]): item["files"] for item in bundle.get("changes", [])}
+        for key, group in groups.items():
+            pairs = list(group.values())
+            revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in pairs}
+            if len(revisions) == 1:
+                self._files(html, key, changes.get(next(iter(revisions))))
+            self._issues(html, key, group, providers, bundle.get("finding_groups", []))
+        html.append('<div class="comparison-grid">')
         inspections: list[str] = []
         for key, group in groups.items():
             for pair in group.values():
-                self._findings(html, inspections, key, pair, fixture)
+                self._findings(html, inspections, key, pair, bundle["fixture"])
         html.append('</div><p id="comparison-empty" class="empty" ' + ('hidden' if groups else '') +
                     '>No reviews are available for this selection.</p>')
         html.append('<div class="inspection-list"><h2 class="inspection-heading">Finding detail</h2>')
@@ -308,14 +330,63 @@ class ReportBuilder:
         html.append('</div></section>')
 
     @staticmethod
+    def _files(html: list[str], key: str, changes: list[dict] | None) -> None:
+        if changes is None:
+            return
+        html.append(f'<details class="case-files" data-context-case="{escape(key, quote=True)}">'
+                    f'<summary>Files changed <span>{len(changes)}</span></summary>')
+        for item in changes:
+            path = item["path"]
+            count = "Binary" if item["added"] is None else f'+{item["added"]} / −{item["removed"]}'
+            html.append(f'<details class="changed-file"><summary><code>{escape(path)}</code><span>{count}</span></summary>'
+                        f'{render_file_patch(item["patch"], path)}</details>')
+        if not changes:
+            html.append('<p class="empty">These commits have no file changes.</p>')
+        html.append('</details>')
+
+    @staticmethod
+    def _issues(html: list[str], key: str, group: dict, providers: list[str], verified: list[dict]) -> None:
+        rows = issue_rows(group, verified)
+        html.append(f'<div class="case-issues" data-context-case="{escape(key, quote=True)}">'
+                    '<h3>Compare by problem</h3>')
+        if not rows:
+            html.append('<p class="empty">This change has no reference or verified additional findings.</p></div>')
+            return
+        html.append('<p class="subtle">Reference problems come from the rubric. Additional findings share a row only when verified as the same problem.</p>'
+                    '<div class="scroll" tabindex="0" role="region" aria-label="Problem comparison"><table><thead><tr>'
+                    '<th scope="col">Problem</th>')
+        for provider in providers:
+            html.append(f'<th scope="col" data-issue-provider="{escape(provider)}">{_reviewer_display(provider)}</th>')
+        html.append('</tr></thead><tbody>')
+        for title, description, hits, reference in rows:
+            kind = "Reference" if reference else "Additional"
+            html.append(f'<tr><th scope="row"><span class="coverage-case">{kind}</span>{inline(title)}'
+                        f'<p class="subtle issue-description">{escape(description)}</p></th>')
+            for provider in providers:
+                pair = group.get(provider)
+                html.append(f'<td data-issue-provider="{escape(provider)}">')
+                matches = hits.get(provider, [])
+                if matches:
+                    for index, claim_id in enumerate(matches, start=1):
+                        label = f'View finding {index}' if len(matches) > 1 else 'View finding'
+                        html.append(f'<a href="#claim-{claim_id}">{label}</a>')
+                else:
+                    message = "No attempt" if not pair else (
+                        "No verified match" if pair["status"] == "completed" else "Review unavailable")
+                    html.append(f'<span class="subtle">{message}</span>')
+                html.append('</td>')
+            html.append('</tr>')
+        html.append('</tbody></table></div></div>')
+
+    @staticmethod
     def _findings(html: list[str], inspections: list[str], key: str, pair: dict, fixture: bool) -> None:
         provider = escape(pair["provider_id"])
         status = pair["status"]
         count = len(pair["claims"])
         html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" tabindex="-1" data-case="{escape(key, quote=True)}" '
-                    f'data-provider="{provider}"><header class="review-head"><div><h3>{escape(_reviewer(pair["provider_id"]))}</h3>'
+                    f'data-provider="{provider}"><header class="review-head"><div><h3>{_reviewer_display(pair["provider_id"])}</h3>'
                     f'<p class="subtle">{escape(_case_display(pair))}</p></div>'
-                    f'<span class="state {status}">{_label(status)}</span></header><div class="review-meta">')
+                    f'<span class="state {status}">{_review_status(pair)}</span></header><div class="review-meta">')
         if status == "completed":
             html.append(f'<span>{count} captured {"comment" if count == 1 else "comments"}</span>')
         pr_url = _link(pair.get("pr_url"))
@@ -334,7 +405,9 @@ class ReportBuilder:
                         f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
         if pair["reason"]:
             html.append(f'<p class="empty">{escape(pair["reason"])}</p>')
-        if not pair["claims"]:
+        if pair.get("publication"):
+            ReportBuilder._publication(html, pair)
+        elif not pair["claims"]:
             message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
             html.append(f'<p class="empty">{message}</p>')
         if pair["claims"]:
@@ -361,6 +434,21 @@ class ReportBuilder:
                 html.extend(f'<li>{escape(finding["matching_criteria"])}</li>' for finding in missing)
                 html.append("</ul></div>")
         html.append("</article>")
+
+    @staticmethod
+    def _publication(html: list[str], pair: dict) -> None:
+        publication = pair["publication"]
+        html.append('<details class="review-publication"><summary>Verified publication</summary>')
+        if pair["status"] != "completed":
+            html.append('<p class="subtle">This publication is outside the formal capture used for these scores.</p>')
+        html.append('<p>No actionable findings were recorded in the publication audit.</p>')
+        if check := _link(publication["check_url"]):
+            html.append(f'<p><a href="{check}">GitHub check · {escape(publication["title"])}</a></p>')
+        for summary in publication["summaries"]:
+            html.append(f'<div class="review-copy">{blocks(publication_text(summary["body"]))}</div>')
+            if source := _link(summary["url"]):
+                html.append(f'<p><a href="{source}">Original reviewer summary on GitHub</a></p>')
+        html.append('</details>')
 
     @staticmethod
     def _inspect(html: list[str], pair: dict, claim: dict, heading: str, severity: str, body: str, fixture: bool) -> None:

@@ -8,7 +8,7 @@ _HEADER = re.compile(r"@@ -(\d{1,9})(?:,\d{1,9})? \+(\d{1,9})(?:,\d{1,9})? @@.*"
 _KINDS = {"+": "addition", "-": "deletion", " ": "context"}
 
 
-def render_diff(hunk: str, locator: str, side: str = "RIGHT") -> str:
+def render_diff(hunk: str, locator: str, side: str = "RIGHT", *, label: str = "Captured GitHub diff") -> str:
     lines = hunk.splitlines()
     header = _HEADER.fullmatch(lines[0]) if lines else None
     if not header:
@@ -16,7 +16,7 @@ def render_diff(hunk: str, locator: str, side: str = "RIGHT") -> str:
 
     old, new = map(int, header.groups())
     target = locator.rpartition(":")[2]
-    result = ['<div class="diff-lines" role="region" tabindex="0" aria-label="Captured GitHub diff">']
+    result = [f'<div class="diff-lines" role="region" tabindex="0" aria-label="{escape(label, quote=True)}">']
     for text in lines[1:]:
         marker = text[:1]
         if marker not in _KINDS:
@@ -35,3 +35,11 @@ def render_diff(hunk: str, locator: str, side: str = "RIGHT") -> str:
         new += marker != "-"
     result.append("</div>")
     return "".join(result)
+
+
+def render_file_patch(patch: str, path: str) -> str:
+    hunks = re.split(r"(?m)(?=^@@ -[0-9])", patch)
+    if len(hunks) == 1:
+        return f'<pre class="diff-raw">{escape(patch)}</pre>'
+    return "".join(render_diff(hunk, "", label=f"{path}, hunk {index}")
+                   for index, hunk in enumerate(hunks[1:], start=1))

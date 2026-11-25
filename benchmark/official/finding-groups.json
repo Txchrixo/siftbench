@@ -1,0 +1,10 @@
+[
+  {
+    "title": "Documented worker still listens to the previous queue",
+    "basis": "Both findings were verified against the pinned change: the documented worker delivered zero reports, while the new queue delivered the scheduled report.",
+    "claim_ids": [
+      "6f4d0e9a76021325b5aae5db0501dd6d0ca1edf988532c75f0760003667c32c4",
+      "ec9a7994049f289422d34c397af9d7ce24e40d690e2cd4befd0fa0024bb1d238"
+    ]
+  }
+]

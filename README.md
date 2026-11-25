@@ -56,6 +56,8 @@ The audit verified seven further completions through GitHub checks and summaries
 3. **Verify and grade.** Match claims to reference findings or attach evidence for additional findings. Keep the source comment and rationale with the verdict.
 4. **Compare and replay.** Read coverage and verdicts in the HTML report. Regenerate HTML, JSON, and Markdown from the archived bundle without calling reviewers again.
 
+To include **Files changed**, pass `--source-repo` to `reviewbench report` with a local Git checkout containing the pinned base and head commits. The exported JSON carries the patches, so replay does not require that checkout. `--publication-audit` attaches a verified capture audit and its original GitHub sources without changing the scoring population. `--finding-groups` accepts evidence-backed links between additional findings from different reviewers, using the format in [the official comparison](benchmark/official/finding-groups.json).
+
 <p align="center">
   <img src="diagrams/08-score-and-evidence-provenance.png" alt="SiftBench provenance from the GitHub review and pinned commit through verification evidence and scoring to the report" width="560">
 </p>

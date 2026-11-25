@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sqlite3
 import sys
@@ -10,6 +11,7 @@ from .github import GitHubClient, RemoteError, verify_pull
 from .grading import VerdictImporter, build_bundle, claims_for_grading
 from .manifest import ManifestLoader, canonical_json
 from .report import ReportBuilder
+from .report.context import attach_changes, attach_publications
 from .runner import CampaignRunner
 from .store import RunStore
 
@@ -99,6 +101,9 @@ def main(argv: list[str] | None = None) -> int:
     report_source.add_argument("--run-id")
     report_source.add_argument("--bundle", type=Path)
     report.add_argument("--out", type=Path, required=True)
+    report.add_argument("--source-repo", type=Path, help="Read full diffs from pinned commits in a local Git repository")
+    report.add_argument("--publication-audit", type=Path, help="Attach verified publication evidence without changing scores")
+    report.add_argument("--finding-groups", type=Path, help="Attach manually verified groups of additional findings")
     args = parser.parse_args(argv)
     store = RunStore(args.state_dir)
     try:
@@ -156,6 +161,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "report":
             builder = ReportBuilder()
             bundle = builder.load_bundle(args.bundle) if args.bundle else build_bundle(store, args.run_id)
+            if args.source_repo:
+                attach_changes(bundle, args.source_repo)
+            if args.publication_audit:
+                attach_publications(bundle, json.loads(args.publication_audit.read_bytes()))
+            if args.finding_groups:
+                bundle["finding_groups"] = json.loads(args.finding_groups.read_bytes())
             builder.write(bundle, args.out)
         else:
             parser.print_help()
