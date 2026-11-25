@@ -99,6 +99,42 @@ def test_summary_only_completion_requires_check_on_same_pr_and_head(manifest_dat
     assert fallback.observe(pr, 100, [], [], [], [check], captured_at=110).signal == "check:12"
 
 
+def test_coderabbit_check_requires_exact_pr_and_explicit_review_completion(manifest_data):
+    target = replace(ManifestLoader.parse(manifest_data).targets[0], provider_id="coderabbit",
+                     publisher="coderabbitai[bot]", completion_check="CodeRabbit")
+    pr = PullRequest(40, "https://github.com/team/one/pull/40", "team/one", "main", "siftbench/attempt", "a" * 40, "b" * 40)
+    timestamp = "1970-01-01T00:01:45Z"
+    check = {"id": 12, "name": "CodeRabbit", "app": {"slug": "coderabbitai"}, "head_sha": pr.head_sha,
+             "pull_requests": [], "status": "completed", "conclusion": "success", "started_at": timestamp,
+             "completed_at": timestamp, "details_url": "https://app.coderabbit.ai/change-stack/Team/One/pull/40?scope=opaque",
+             "output": {"summary": "Result: Success - Review completed\nDetails"}}
+    walkthrough = {"id": 20, "user": {"login": target.publisher}, "html_url": pr.url + "#issuecomment-20",
+                   "created_at": timestamp, "body": "<!-- coderabbit-ai-generated:v1 -->\n"
+                   "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\nWalkthrough"}
+    adapter = ReviewerAdapter(target)
+    completed = adapter.observe(pr, 100, [], [], [walkthrough], [check], captured_at=110)
+    assert completed.state == "completed" and completed.signal == "check:12"
+    assert completed.claims == () and completed.raw["summaries"] == [walkthrough]
+    skipped = {**check, "output": {"summary": "Result: Skipped - Auto review disabled"}}
+    assert adapter.observe(pr, 100, [], [], [], [skipped], captured_at=110).state == "failed"
+    for unassociated in ({**check, "details_url": check["details_url"].replace("/40?", "/41?")},
+                         {**check, "details_url": check["details_url"].replace("app.coderabbit.ai", "example.com")},
+                         {**check, "app": {"slug": "impostor"}},
+                         {**check, "pull_requests": [{"number": 41}]}):
+        assert adapter.observe(pr, 100, [], [], [], [unassociated], captured_at=110).state == "pending"
+
+    review = {"id": 30, "commit_id": pr.head_sha, "state": "COMMENTED", "user": {"login": target.publisher},
+              "submitted_at": timestamp, "html_url": pr.url + "#pullrequestreview-30",
+              "body": "<!-- coderabbit-ai-generated:v1 -->\n**Actionable comments posted: 1**"}
+    inline = {**review, "id": 31, "pull_request_review_id": 30, "path": "reports.py", "line": 2,
+              "html_url": pr.url + "#discussion_r31", "body": "Finding on the pinned line."}
+    result = adapter.observe(pr, 100, [review], [inline], [walkthrough], [check], captured_at=110)
+    assert [claim[0] for claim in result.claims] == ["inline:31"]
+    review["body"] += "\n<summary>Outside diff range comments (1)</summary>\nAn additional finding."
+    result = adapter.observe(pr, 100, [review], [inline], [walkthrough], [check], captured_at=110)
+    assert [claim[0] for claim in result.claims] == ["review:30", "inline:31"]
+
+
 def test_live_preflight_only_reads_and_rejects_a_changed_base(manifest_data):
     class GitHubStub:
         base = "a" * 40

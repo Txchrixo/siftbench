@@ -192,6 +192,8 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
             pair["timing"]["frozen_at"] = capture["frozen_at"]
             check, review = raw.get("check") or {}, raw.get("first_review") or {}
             is_check = pair["capture_signal"].startswith("check:")
+            if is_check and isinstance(check.get("html_url"), str):
+                pair["capture_check_url"] = check["html_url"]
             pair["timing"]["published_at"] = _timestamp(check.get("completed_at") if is_check else review.get("submitted_at"))
             inline = {f'inline:{item["id"]}': item for item in raw.get("inline", ())
                       if isinstance(item, dict) and type(item.get("id")) is int}

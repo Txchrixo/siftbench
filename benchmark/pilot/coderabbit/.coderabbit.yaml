@@ -1,0 +1,15 @@
+reviews:
+  high_level_summary_in_walkthrough: true
+  auto_review:
+    enabled: true
+    base_branches:
+      - pilot/coderabbit-v2-base
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
+  web_search:
+    enabled: false

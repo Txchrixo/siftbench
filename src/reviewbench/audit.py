@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from .github import GitHubClient, RemoteError
 from .manifest import Manifest, digest
+from .providers import check_completed_review, check_matches_pull
 
 
 def _objects(items: list[dict], publisher: str) -> dict[str, dict]:
@@ -15,6 +16,7 @@ def _objects(items: list[dict], publisher: str) -> dict[str, dict]:
 def audit_campaign(bundle: dict, manifest: Manifest, client: GitHubClient) -> list[dict]:
     """Return per-pair evidence checks without changing statuses, captures, or scores."""
     targets = {(target.provider_id, target.condition, target.isolation_group): target for target in manifest.targets}
+    cases = {(case.case_id, case.condition): case for case in manifest.cases}
     if bundle["fixture"] or bundle.get("manifest_digest") != manifest.manifest_digest:
         raise ValueError("Audit requires a live bundle and its pinned manifest")
     results = []
@@ -43,6 +45,10 @@ def audit_campaign(bundle: dict, manifest: Manifest, client: GitHubClient) -> li
                 continue
             if pr.title is not None and pr.title != pair.get("case_title", pr.title):
                 result["differences"].append("Current PR title differs from the archived title")
+            if target.publisher == "coderabbitai[bot]" and target.completion_check == "CodeRabbit":
+                case = cases.get((pair["case_id"], pair["condition"]))
+                if case is None or pr.title != case.title or pr.body != case.body:
+                    result["differences"].append("Current CodeRabbit PR title or description differs from the pinned input")
             _audit_sources(pair, pr, target.publisher, client.review_sources(pr), result)
             if result["differences"]:
                 result["availability"] = "different"
@@ -85,10 +91,8 @@ def _audit_sources(pair, pr, publisher, sources, result):
             valid = review and review.get("commit_id") == pr.head_sha and review.get("state") in {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
             result["formal_review_id"] = oid
         elif kind == "check":
-            valid = any(str(check.get("id")) == oid and check.get("head_sha") == pr.head_sha
-                        and check.get("status") == "completed" and check.get("conclusion") == "success"
-                        and (check.get("app") or {}).get("slug", "").lower() == publisher.removesuffix("[bot]")
-                        and any(entry.get("number") == pr.number for entry in (check.get("pull_requests") or []) if isinstance(entry, dict))
+            valid = any(str(check.get("id")) == oid and check_matches_pull(check, pr, publisher)
+                        and check_completed_review(check, publisher)
                         for check in checks)
         else:
             valid = False

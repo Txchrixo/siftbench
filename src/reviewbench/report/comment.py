@@ -4,7 +4,8 @@ import re
 from html import escape
 
 
-_METADATA = r"<!--[ \t]*/?proofline:(?:(?!-->)[^\r\n])*-->"
+_METADATA = (r"<!--[ \t]*(?:/?proofline:|coderabbit[-:]|autofix_checkbox_)"
+             r"(?:(?!-->)[^\r\n])*-->")
 _METADATA_RUN = re.compile(rf"(?:{_METADATA}\s*)+")
 _GREPTILE_BADGE = re.compile(
     r'\A<a href=""><img alt="(P[0-9]+)" src="https://greptile-static-assets\.s3\.amazonaws\.com/'
@@ -14,6 +15,10 @@ _PROOFLINE_TITLE = re.compile(r"\*\*(Info|Suggestion|Warning|Serious|Critical)\*
 _PROOFLINE_FOOTER = re.compile(
     r"\[View (?:finding|full review) in Proofline\]\(https://proofline\.sh/[^)\n]+\)"
 )
+_CODERABBIT_PICTURE = re.compile(
+    r'<picture>[^\r\n]*?https://storage\.googleapis\.com/coderabbit_public_assets/[^\r\n]*?</picture>'
+)
+_CODERABBIT_SEVERITY = re.compile(r"\*\*\s*(Critical|Major|Minor|Trivial|High|Medium|Low|Info)\s*\*\*(?:\s*·.*)?")
 _INLINE = re.compile(rf"(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\n()]*\)|{_METADATA})")
 _LIST_ITEM = re.compile(r"\s*([-+*]|[0-9]+\.)\s+(.+)")
 _SUMMARY = re.compile(r"<summary>(.+)</summary>")
@@ -37,6 +42,7 @@ def inline(text: str) -> str:
 def review_text(raw: str) -> tuple[str, str, str]:
     """Return the display title, provider severity and readable body."""
     text = raw.lstrip()
+    coderabbit = text.startswith("<!-- coderabbit-ai-generated:")
     if metadata := _METADATA_RUN.match(text):
         text = text[metadata.end():]
     badge = _GREPTILE_BADGE.match(text)
@@ -44,6 +50,10 @@ def review_text(raw: str) -> tuple[str, str, str]:
     if badge:
         text = text[badge.end():]
     first, _, remaining = text.partition("\n")
+    if coderabbit and (level := _CODERABBIT_SEVERITY.fullmatch(_CODERABBIT_PICTURE.sub("", first).strip())):
+        severity = level[1]
+        text = remaining.lstrip()
+        first, _, remaining = text.partition("\n")
     heading = _PROOFLINE_TITLE.fullmatch(first.strip())
     if heading:
         return heading[2], heading[1], remaining.strip()
@@ -94,7 +104,7 @@ def blocks(text: str) -> str:
               and (summary := _SUMMARY.fullmatch(lines[index + 1].strip()))):
             flush_paragraph()
             close_list()
-            label = summary[1].strip()
+            label = _CODERABBIT_PICTURE.sub("", summary[1]).strip()
             label = "Reviewer details" if label.casefold() == "details" else label
             output.append(f'<details class="review-disclosure"><summary>{inline(label)}</summary>'
                           '<div class="disclosure-copy">')

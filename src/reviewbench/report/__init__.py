@@ -406,7 +406,7 @@ class ReportBuilder:
             pr_label = f"PR #{number}" if number else "Pull request"
             name = escape(f"Open {reviewer} {pr_label} on GitHub", quote=True)
             html.append(f'<div class="coverage-links"><a href="{pr_url}" aria-label="{name}">{icon("pr")}{pr_label}</a>')
-            if check := _link((pair.get("publication") or {}).get("check_url")):
+            if check := _link((pair.get("publication") or {}).get("check_url") or pair.get("capture_check_url")):
                 html.append(f'<a href="{check}">{icon("external")}Publication check</a>')
             elif number and (signal := re.fullmatch(r"review:([0-9]+)", pair.get("capture_signal") or "")):
                 review = _link(urlsplit(pair["pr_url"])._replace(fragment=f"pullrequestreview-{signal[1]}").geturl())
@@ -660,6 +660,8 @@ class ReportBuilder:
                             f'<a href="https://github.com{escape(path, quote=True)}/files">{icon("diff")}Files changed</a>')
             else:
                 html.append(f'<a href="{pr_url}">{icon("pr")}Pull request</a>')
+        if not fixture and (check := _link(pair.get("capture_check_url"))):
+            html.append(f'<a href="{check}">{icon("external")}Completion check</a>')
         html.append('</div>')
         if "head_sha" in pair:
             html.append(f'<details class="revisions"><summary>{icon("commit")}Commit revisions</summary>'

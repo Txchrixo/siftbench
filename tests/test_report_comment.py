@@ -23,6 +23,18 @@ def test_review_formatting_keeps_untrusted_content_inert():
     )
 
 
+def test_coderabbit_review_title_keeps_suggestion_and_hides_provider_markup():
+    picture = '<picture><img src="https://storage.googleapis.com/coderabbit_public_assets/major.svg"></picture>'
+    raw = (f"<!-- coderabbit-ai-generated:v1 -->\n\n**{picture} Major** · **Functional Correctness**\n\n"
+           "**Keep the ID tie-breaker.**\n\nUse both fields.\n\n<!-- coderabbit-global-learning v1 sample -->\n"
+           f"<details>\n<summary>{picture} Suggested change</summary>\n\nKeep the ID.\n</details>")
+    title, severity, body = review_text(raw)
+    assert (title, severity) == ("Keep the ID tie-breaker.", "Major")
+    rendered = blocks(body)
+    assert "Use both fields." in rendered and "<summary>Suggested change</summary>" in rendered
+    assert "googleapis" not in rendered and "coderabbit-global-learning" not in rendered
+
+
 def test_review_summary_hides_provider_markers_and_redundant_footer():
     raw = ('<!-- proofline:review-comment -->\n**Proofline** has 1 new finding to review.\n\n'
            '[View full review in Proofline](https://proofline.sh/path)\n\n'
