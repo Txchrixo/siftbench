@@ -25,10 +25,10 @@ _INLINE = re.compile(rf"(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\n()]*\)|{_ME
 _LIST_ITEM = re.compile(r"\s*([-+*]|[0-9]+\.)\s+(.+)")
 _SUMMARY = re.compile(r"<summary>(.+)</summary>")
 _REVIEW_SOURCE = re.compile(r"_Source: ([^_<>]+)_")
-_AGENT_PROMPT = re.compile(
+_CODE_DISCLOSURE = re.compile(
     r"[ \t]*<details>[ \t]*\n[ \t]*<summary>(?P<label>[^\n]+)</summary>[ \t]*\n"
-    r"[\s]*<dl>\s*<dd>\s*"
-    r"(?P<fence>`{3,})[\w+.-]*[ \t]*\n(?P<prompt>[\s\S]*?)\n"
+    r"\s*<dl>\s*<dd>\s*(?:<br\s*/?>\s*)?"
+    r"(?P<fence>`{3,})[\w+.-]*[ \t]*\n(?P<code>[\s\S]*?)\n"
     r"[ \t]*(?P=fence)[ \t]*\n\s*</dd>\s*</dl>\s*</details>[ \t]*(?=\n|$)"
 )
 
@@ -39,6 +39,12 @@ def _prompt_block(prompt: str) -> str:
             f'<pre tabindex="0" role="region" aria-label="CodeRabbit prompt"><code>{escape(prompt)}</code></pre>'
             '<button type="button" class="prompt-copy" aria-label="Copy prompt" title="Copy prompt" hidden>'
             f'{icon("copy")}</button></div><p class="prompt-status" role="status"></p></details>')
+
+
+def _suggested_fix(label: str, code: str) -> str:
+    return (f'<details class="review-disclosure review-suggestion"><summary>{icon("diff")}{inline(label)}</summary>'
+            '<div class="disclosure-copy"><pre tabindex="0" role="region" aria-label="Suggested code change">'
+            f'<code>{escape(code)}</code></pre></div></details>')
 
 
 def inline(text: str) -> str:
@@ -122,11 +128,12 @@ def blocks(text: str) -> str:
             flush_paragraph()
             close_list()
             label = _CODERABBIT_PICTURE.sub("", summary[1]).strip()
-            if label == "Prompt to fix issue":
-                prompt = _AGENT_PROMPT.match("\n".join(lines[index:]))
-                if prompt:
-                    output.append(_prompt_block(prompt["prompt"]))
-                    handled_through = index + prompt[0].count("\n")
+            if label == "Prompt to fix issue" or label.startswith("Suggested fix for "):
+                code_block = _CODE_DISCLOSURE.match("\n".join(lines[index:]))
+                if code_block:
+                    code_text = code_block["code"]
+                    output.append(_prompt_block(code_text) if label == "Prompt to fix issue" else _suggested_fix(label, code_text))
+                    handled_through = index + code_block[0].count("\n")
                     continue
             label = "Reviewer details" if label.casefold() == "details" else label
             output.append(f'<details class="review-disclosure"><summary>{inline(label)}</summary>'

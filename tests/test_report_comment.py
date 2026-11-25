@@ -47,6 +47,11 @@ def test_coderabbit_prompt_renders_copyable_inert_text_without_provider_wrappers
     assert "<p class=\"review-attribution\">Source · Learnings</p>" in rendered
     assert not any(marker in rendered for marker in ("ai-agent-prompt", "&lt;dl&gt;", "fingerprinting", "cr-comment"))
     assert "&lt;dl&gt;" in blocks("<dl>unrelated markup</dl>")
+    suggestion = blocks("<details>\n<summary>Suggested fix for README.md</summary>\n"
+                        "<dl>\n<dd>\n<br>\n\n```diff\n-old\n+new\n```\n</dd>\n</dl>\n</details>")
+    assert '<pre tabindex="0" role="region" aria-label="Suggested code change">' in suggestion
+    assert "<code>-old\n+new</code>" in suggestion
+    assert "&lt;dl&gt;" not in suggestion and "&lt;br&gt;" not in suggestion
 
 
 def test_review_summary_hides_provider_markers_and_redundant_footer():

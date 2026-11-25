@@ -590,9 +590,9 @@ select:hover { border-color: var(--text-secondary); }
 .review-prompt > summary { padding-inline: var(--space-3); }
 .review-prompt > summary > svg { flex: 0 0 auto; color: var(--text-secondary); }
 .prompt-body { position: relative; min-width: 0; padding: 0 var(--space-2) var(--space-2); }
-.prompt-body pre {
+:is(.prompt-body, .review-suggestion) pre {
   margin: 0;
-  padding: .7rem 3rem .7rem .75rem;
+  padding: .7rem .75rem;
   overflow: auto;
   white-space: pre;
   overflow-wrap: normal;
@@ -601,7 +601,8 @@ select:hover { border-color: var(--text-secondary); }
   scrollbar-color: var(--text-secondary) var(--secondary);
   scrollbar-width: thin;
 }
-.prompt-body pre:focus-visible { outline-offset: -2px; }
+.prompt-body pre { padding-inline-end: 3rem; }
+:is(.prompt-body, .review-suggestion) pre:focus-visible { outline-offset: -2px; }
 .prompt-copy {
   position: absolute;
   inset: var(--space-1) calc(2 * var(--space-2)) auto auto;
