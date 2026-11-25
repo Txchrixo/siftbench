@@ -4,11 +4,14 @@ const left = document.querySelector("#compare-left");
 const right = document.querySelector("#compare-right");
 const grid = document.querySelector(".comparison-grid");
 const panels = [...grid.querySelectorAll("[data-case]")];
+const inspections = document.querySelector(".inspection-list");
+const details = [...inspections.querySelectorAll("[data-pair]")];
 const empty = document.querySelector("#comparison-empty");
 const status = document.querySelector("#comparison-status");
 let previousReviewers = [left.value, right.value];
+let activeClaim = "";
 
-function showComparison(announce = false) {
+function showComparison(announce = false, requestedClaim = "") {
   previousReviewers = [left.value, right.value];
   const visible = previousReviewers.filter(Boolean).map(provider =>
     panels.find(panel => panel.dataset.case === cases.value && panel.dataset.provider === provider)
@@ -19,6 +22,16 @@ function showComparison(announce = false) {
   for (const panel of visible) grid.append(panel);
   grid.dataset.visible = visible.length;
   empty.hidden = visible.length > 0;
+  const links = visible.flatMap(panel => [...panel.querySelectorAll(".claim-index a")]);
+  const active = links.find(link => link.hash === (requestedClaim || activeClaim))
+    || links.find(link => link.dataset.decision !== "out_of_scope") || links[0];
+  activeClaim = active?.hash || "";
+  links.forEach(link => {
+    if (link === active) link.setAttribute("aria-current", "true");
+    else link.removeAttribute("aria-current");
+  });
+  for (const detail of details) detail.hidden = `#${detail.id}` !== activeClaim;
+  inspections.hidden = !active;
   if (announce) {
     const caseLabel = cases.selectedOptions[0]?.textContent;
     const names = visible.map(panel => panel.querySelector("h3").textContent);
@@ -30,11 +43,11 @@ function showComparison(announce = false) {
 
 function showLinkedPanel() {
   const target = document.getElementById(location.hash.slice(1));
-  const panel = target?.closest("[data-case]");
+  const panel = target?.dataset.pair ? document.getElementById(target.dataset.pair) : target?.closest("[data-case]");
   if (!panel) return;
   cases.value = panel.dataset.case;
   if (![left.value, right.value].includes(panel.dataset.provider)) left.value = panel.dataset.provider;
-  showComparison();
+  showComparison(false, target.dataset.pair ? `#${target.id}` : "");
   target.focus({ preventScroll: true });
   target.scrollIntoView({ block: "start" });
 }
@@ -48,8 +61,8 @@ if (panels.length) {
     }
     showComparison(true);
   });
-  document.querySelector("#coverage").addEventListener("click", event => {
-    const link = event.target.closest("a.state");
+  document.addEventListener("click", event => {
+    const link = event.target.closest("#coverage a.state, .claim-index a");
     if (link && link.hash === location.hash && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       showLinkedPanel();

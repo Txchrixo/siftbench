@@ -10,6 +10,7 @@ _GREPTILE_BADGE = re.compile(
     r'badges/[^"<>]+"(?: align="top")?></a>\s*'
 )
 _PROOFLINE_TITLE = re.compile(r"\*\*(Info|Suggestion|Warning|Serious|Critical)\*\*\s*[·–—-]\s*(.+)")
+_PROOFLINE_FOOTER = re.compile(r"\n\[View (?:finding|full review) in Proofline\]\(https://proofline\.sh/[^)\n]+\)\s*\Z")
 _INLINE = re.compile(r"(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\n()]*\))")
 _LIST_ITEM = re.compile(r"\s*([-+*]|[0-9]+\.)\s+(.+)")
 
@@ -30,6 +31,7 @@ def inline(text: str) -> str:
 def review_text(raw: str) -> tuple[str, str, str]:
     """Return the display title, provider severity and readable body."""
     text = _PROOFLINE_METADATA.sub("", raw.lstrip(), count=1)
+    text = _PROOFLINE_FOOTER.sub("", text)
     badge = _GREPTILE_BADGE.match(text)
     severity = badge[1] if badge else ""
     if badge:

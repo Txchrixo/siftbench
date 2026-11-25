@@ -5,7 +5,8 @@ def test_review_metadata_becomes_a_readable_heading():
     greptile = ('<a href=""><img alt="P1" src="https://greptile-static-assets.s3.amazonaws.com/'
                 'badges/p1.svg?v=9" align="top"></a> **History skips rows**\n\nUse a `cursor`.')
     proofline = ('<!-- proofline:review-comment -->\n<!-- proofline:finding-series=example -->\n'
-                 '**Warning** · History skips rows\n\nUse a `cursor`.')
+                 '**Warning** · History skips rows\n\nUse a `cursor`.\n\n'
+                 '[View finding in Proofline](https://proofline.sh/path)')
     assert review_text(greptile) == ("History skips rows", "P1", "Use a `cursor`.")
     assert review_text(proofline) == ("History skips rows", "Warning", "Use a `cursor`.")
 

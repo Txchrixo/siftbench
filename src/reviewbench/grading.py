@@ -127,7 +127,9 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
                 continue
             if capture["observed_head_sha"] != variant.head_sha:
                 raise StoreError("Review capture does not match the pinned commit")
-            store.read_artifact(capture["raw_artifact_id"])
+            raw = json.loads(store.read_artifact(capture["raw_artifact_id"]))
+            inline = {f'inline:{item["id"]}': item for item in raw.get("inline", ())
+                      if isinstance(item, dict) and type(item.get("id")) is int}
             claims = db.execute("""
                 SELECT f.*, v.verdict_id, v.decision, v.expected_id, v.rationale, v.revision
                 FROM finding_claim f LEFT JOIN verdict v ON v.claim_id = f.claim_id AND v.revision = (
@@ -136,6 +138,14 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
             """, (capture["capture_id"],)).fetchall()
             for row in claims:
                 claim = dict(row)
+                source = inline.get(claim["source_object_id"], {})
+                hunk = source.get("diff_hunk")
+                if (isinstance(hunk, str) and 0 < len(hunk) <= 16_384
+                        and source.get("commit_id") == variant.head_sha
+                        and source.get("html_url") == claim["source_url"]):
+                    claim["diff_hunk"] = hunk
+                    if source.get("side") in ("LEFT", "RIGHT"):
+                        claim["diff_side"] = source["side"]
                 evidence = db.execute("""
                     SELECT a.artifact_id, a.source_type, a.content_sha256 FROM artifact a
                     JOIN verdict_evidence v USING (artifact_id) WHERE v.verdict_id = ? ORDER BY a.artifact_id

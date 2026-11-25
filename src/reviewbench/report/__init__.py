@@ -11,6 +11,7 @@ from ..grading import DECISIONS, EVIDENCE_TYPES, ScoreCalculator
 from ..manifest import canonical_json, digest, identifier
 from ..store import StoreError
 from .comment import blocks, inline, review_text
+from .diff import render_diff
 
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -82,6 +83,12 @@ def _validate(bundle: dict) -> None:
                         or not isinstance(claim["evidence"], list)
                         or claim["decision"] == "confirmed_expected" and claim["expected_id"] not in expected):
                     raise StoreError("Invalid or duplicate claim")
+                if "diff_hunk" in claim and (
+                    not isinstance(claim["diff_hunk"], str) or not 0 < len(claim["diff_hunk"]) <= 16_384
+                ):
+                    raise StoreError("Invalid captured diff hunk")
+                if "diff_side" in claim and claim["diff_side"] not in ("LEFT", "RIGHT"):
+                    raise StoreError("Invalid captured diff side")
                 seen_claims.add(claim["claim_id"])
                 for piece in claim["evidence"]:
                     if piece["type"] not in EVIDENCE_TYPES or digest(piece["text"].encode()) != piece["digest"]:
@@ -261,14 +268,18 @@ class ReportBuilder:
                 html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(_reviewer(provider))}</option>')
             html.append(_SELECT_END)
         html.append('</div><p id="comparison-status" class="visually-hidden" role="status"></p><div class="comparison-grid">')
+        inspections: list[str] = []
         for key, group in groups.items():
             for pair in group.values():
-                self._findings(html, key, pair, fixture)
+                self._findings(html, inspections, key, pair, fixture)
         html.append('</div><p id="comparison-empty" class="empty" ' + ('hidden' if groups else '') +
-                    '>No reviews are available for this selection.</p></section>')
+                    '>No reviews are available for this selection.</p>')
+        html.append('<div class="inspection-list">')
+        html.extend(inspections)
+        html.append('</div></section>')
 
     @staticmethod
-    def _findings(html: list[str], key: str, pair: dict, fixture: bool) -> None:
+    def _findings(html: list[str], inspections: list[str], key: str, pair: dict, fixture: bool) -> None:
         provider = escape(pair["provider_id"])
         status = pair["status"]
         count = len(pair["claims"])
@@ -291,8 +302,22 @@ class ReportBuilder:
         if not pair["claims"]:
             message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
             html.append(f'<p class="empty">{message}</p>')
-        for claim in pair["claims"]:
-            ReportBuilder._claim(html, claim, fixture)
+        if pair["claims"]:
+            html.append('<ul class="claim-index">')
+            for claim in pair["claims"]:
+                title, severity, body = review_text(claim["body"])
+                decision = claim["decision"]
+                fallback = "Review summary" if decision == "out_of_scope" else "Reviewer comment"
+                heading = inline(title) if title else fallback
+                locator = escape(claim.get("source_locator") or "")
+                html.append(f'<li><a href="#claim-{claim["claim_id"]}" data-decision="{decision or "ungraded"}">'
+                            f'<span class="claim-name">{heading}</span><span class="claim-meta">'
+                            f'<span class="verdict {decision or "ungraded"}">{_label(decision)}</span>')
+                if locator:
+                    html.append(f'<code>{locator}</code>')
+                html.append('</span></a></li>')
+                ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture)
+            html.append('</ul>')
         if pair["status"] == "completed":
             matched = {claim["expected_id"] for claim in pair["claims"] if claim["decision"] == "confirmed_expected"}
             missing = [finding for finding in pair["expected"] if finding["expected_id"] not in matched]
@@ -303,29 +328,41 @@ class ReportBuilder:
         html.append("</article>")
 
     @staticmethod
-    def _claim(html: list[str], claim: dict, fixture: bool) -> None:
-        title, severity, body = review_text(claim["body"])
+    def _inspect(html: list[str], pair: dict, claim: dict, heading: str, severity: str, body: str, fixture: bool) -> None:
+        claim_id = claim["claim_id"]
         decision = claim["decision"]
-        fallback = "Review summary" if decision == "out_of_scope" else "Reviewer comment"
-        html.append(f'<div class="finding" id="claim-{claim["claim_id"]}" tabindex="-1">'
-                    f'<div class="finding-labels"><span class="verdict {decision or "ungraded"}">{_label(decision)}</span>')
-        if severity:
-            html.append(f'<span class="severity" title="Reviewer severity">{escape(severity)}</span>')
-        html.append(f'</div><h4>{inline(title) if title else fallback}</h4>')
-        if claim.get("source_locator"):
-            html.append(f'<p class="source-location"><code>{escape(claim["source_locator"])}</code></p>')
-        if body and decision != "out_of_scope":
-            html.append(f'<blockquote class="review-copy">{blocks(body)}</blockquote>')
-        if claim["rationale"]:
-            html.append(f'<div class="rationale"><h5>Verdict rationale</h5><p>{escape(claim["rationale"])}</p></div>')
-        if claim["evidence"]:
-            html.append(f'<details><summary>Verification evidence <span>{len(claim["evidence"])}</span></summary>')
-            for piece in claim["evidence"]:
-                html.append(f'<div class="evidence"><h5>{_label(piece["type"])}</h5><p>{escape(piece["text"])}</p></div>')
-            html.append("</details>")
-        html.append(f'<details><summary>Original comment text</summary><pre>{escape(claim["body"])}</pre></details>')
+        locator = claim.get("source_locator") or ""
+        html.append(f'<article class="finding inspector" id="claim-{claim_id}" tabindex="-1" '
+                    f'data-pair="pair-{pair["pair_id"]}" aria-labelledby="title-{claim_id}">'
+                    '<header class="inspector-head"><div>'
+                    f'<p class="inspector-origin"><strong>{escape(_reviewer(pair["provider_id"]))}</strong>'
+                    f'<span>{escape(_case_display(pair))}</span></p><h3 id="title-{claim_id}">{heading}</h3></div>')
         url = _link(claim["source_url"])
         if url:
             label = "Fixture comment URL" if fixture else "View original on GitHub"
             html.append(f'<a class="source-link" href="{url}">{label} <span aria-hidden="true">↗</span></a>')
-        html.append("</div>")
+        html.append('</header>')
+        if locator or claim.get("diff_hunk"):
+            source_label = "Captured GitHub diff" if claim.get("diff_hunk") else "Reported location"
+            html.append(f'<div class="source-panel"><div class="source-heading"><span>{source_label}</span>'
+                        f'<code>{escape(locator)}</code></div>')
+            if claim.get("diff_hunk"):
+                html.append(render_diff(claim["diff_hunk"], locator, claim.get("diff_side", "RIGHT")))
+            html.append('</div>')
+        html.append('<div class="inspection-body"><div class="observation"><h4>Reviewer comment</h4>')
+        if severity:
+            html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong></p>')
+        if body:
+            html.append(f'<blockquote class="review-copy">{blocks(body)}</blockquote>')
+        html.append(f'<details><summary>Original comment text</summary><pre>{escape(claim["body"])}</pre></details></div>')
+        html.append('<div class="evaluation"><h4>Benchmark verdict</h4>'
+                    f'<p class="verdict {decision or "ungraded"}">{_label(decision)}</p>')
+        if claim["rationale"]:
+            html.append(f'<p class="rationale">{escape(claim["rationale"])}</p>')
+        if claim["evidence"]:
+            html.append('<div class="verification"><h5>Verification evidence</h5>')
+            for piece in claim["evidence"]:
+                html.append(f'<div class="evidence"><strong>{_label(piece["type"])}</strong>'
+                            f'<p>{escape(piece["text"])}</p></div>')
+            html.append('</div>')
+        html.append('</div></div><div class="inspector-nav"><a href="#comparison">Back to findings</a></div></article>')
