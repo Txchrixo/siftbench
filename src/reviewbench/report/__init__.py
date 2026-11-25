@@ -19,6 +19,9 @@ _STATES = frozenset({
     "planned", "preparing", "awaiting_trigger", "awaiting_review", "completed",
     "invalid_input", "needs_attention", "timed_out", "failed", "quota",
 })
+_SELECT_END = ('</select><svg class="select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true" '
+               'focusable="false"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" '
+               'stroke-linecap="round" stroke-linejoin="round"/></svg></span></label>')
 
 
 def _link(url: object) -> str | None:
@@ -166,7 +169,7 @@ class ReportBuilder:
                 '<nav aria-label="Report"><a href="#scores">Scores</a><a href="#comparison">Findings</a>'
                 '<a href="#coverage">Coverage</a></nav></div></header>',
                 f'<main id="main" tabindex="-1"><div class="title"><div><h1>Reviewer benchmark</h1>'
-                f'<p class="run-meta">{scope} <code>{escape(bundle["run_id"])}</code></p></div>'
+                f'<p class="run-meta"><span>{scope}</span> <code>{escape(bundle["run_id"])}</code></p></div>'
                 '<a class="action" href="#comparison">Compare findings <span aria-hidden="true">↓</span></a></div>']
         groups: dict[str, dict[str, dict]] = {}
         for pair in bundle["pairs"]:
@@ -183,7 +186,9 @@ class ReportBuilder:
         self._scores(html, metrics["shared"], rows)
         self._comparison(html, groups, providers, bundle["fixture"])
         self._coverage(html, groups, providers)
-        html.append(f"</main><script>{script}</script></body></html>")
+        html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
+                    f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
+        html.append(f"<script>{script}</script></body></html>")
         (output / "results.json").write_bytes(canonical_json(bundle) + b"\n")
         (output / "report.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
         (output / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
@@ -243,16 +248,18 @@ class ReportBuilder:
     def _comparison(self, html: list[str], groups: dict, providers: list[str], fixture: bool) -> None:
         html.append('<section id="comparison"><div class="section-heading"><h2>Compare findings</h2>'
                     '<p class="subtle">Choose a case and reviewers, then open the evidence behind a verdict.</p></div>'
-                    '<div id="comparison-controls" class="filters" hidden><label>Case and condition<select id="compare-case">')
+                    '<div id="comparison-controls" class="filters" hidden><label>Case and condition'
+                    '<span class="select-field"><select id="compare-case">')
         html.extend(f'<option value="{escape(key, quote=True)}">{escape(_case_display(next(iter(group.values()))))}</option>'
                     for key, group in groups.items())
-        html.append("</select></label>")
+        html.append(_SELECT_END)
         for title, field, selected in (("First reviewer", "left", 0), ("Second reviewer", "right", 1)):
-            html.append(f'<label>{title}<select id="compare-{field}"><option value="">None</option>')
+            html.append(f'<label>{title}<span class="select-field"><select id="compare-{field}">'
+                        '<option value="">None</option>')
             for index, provider in enumerate(providers):
                 selection = " selected" if selected == index else ""
                 html.append(f'<option value="{escape(provider, quote=True)}"{selection}>{escape(_reviewer(provider))}</option>')
-            html.append("</select></label>")
+            html.append(_SELECT_END)
         html.append('</div><p id="comparison-status" class="visually-hidden" role="status"></p><div class="comparison-grid">')
         for key, group in groups.items():
             for pair in group.values():
