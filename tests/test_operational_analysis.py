@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from reviewbench.analysis import attach_costs, campaign_metrics, compare_campaigns
+from reviewbench.analysis import attach_costs, campaign_metrics, compare_campaigns, extend_campaign
 from reviewbench.audit import audit_campaign
 from reviewbench.corpus import prepare_corpus
 from reviewbench.github import PullRequest
@@ -24,6 +24,26 @@ def _bundle(manifest, run_id="pilot"):
                       "timing": {"review_started_at": 100, "published_at": 115}})
     return {"fixture": False, "run_id": run_id, "manifest_digest": manifest.manifest_digest,
             "rubric_digest": manifest.rubric_digest, "pairs": pairs}
+
+
+def test_extend_campaign_pins_inputs_and_preserves_the_original_results(manifest_data):
+    base = ManifestLoader.parse(manifest_data)
+    baseline = _bundle(base)
+    baseline["pairs"][0].pop("input_digest")
+    original = deepcopy(baseline)
+    extra = deepcopy(manifest_data)
+    extra.update(run_id="new-reviewer", allowed_repositories=["team/coderabbit"],
+                 targets=[{"provider_id": "coderabbit", "condition": "code_only", "repository": "team/coderabbit",
+                           "publisher": "coderabbitai[bot]"}])
+    new = ManifestLoader.parse(extra)
+    result = extend_campaign(baseline, base, _bundle(new, new.run_id), new, run_id="official-extension")
+    assert baseline == original
+    assert {pair["provider_id"] for pair in result["pairs"]} == {"one", "two", "coderabbit"}
+    assert all(pair["input_digest"] == base.cases[0].input_digest for pair in result["pairs"])
+    extra["cases"][0]["body"] = "The same commit with different review context."
+    changed = ManifestLoader.parse(extra)
+    with pytest.raises(ValueError, match="same pinned inputs"):
+        extend_campaign(baseline, base, _bundle(changed), changed, run_id="mismatch")
 
 
 def test_operational_metrics_distinguish_no_completions_from_partial_grading(manifest_data):

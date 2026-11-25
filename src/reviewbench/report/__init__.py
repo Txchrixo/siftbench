@@ -20,6 +20,7 @@ from .issues import issue_rows
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+_REVIEWER_MARKS = {"greptile": "png", "proofline": "png", "coderabbit": "svg"}
 _STATES = frozenset({
     "planned", "preparing", "awaiting_trigger", "awaiting_review", "completed",
     "invalid_input", "needs_attention", "timed_out", "failed", "quota",
@@ -171,7 +172,7 @@ def _reviewer(value: str) -> str:
 
 def _reviewer_display(provider: str) -> str:
     name = escape(_reviewer(provider))
-    mark = f'<span class="reviewer-mark {provider}" aria-hidden="true"></span>' if provider in {"greptile", "proofline"} else ""
+    mark = f'<span class="reviewer-mark {provider}" aria-hidden="true"></span>' if provider in _REVIEWER_MARKS else ""
     return f'<span class="reviewer-name">{mark}<span class="reviewer-label">{name}</span></span>'
 
 
@@ -188,8 +189,8 @@ def _report_styles(*, operational: bool = False, assistants: bool = False) -> st
     names = ("theme.css", "report.css", "analysis.css") if operational else ("theme.css", "report.css")
     css = "".join(root.joinpath(name).read_text(encoding="utf-8") for name in names)
     css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
-    for reviewer in ("greptile", "proofline"):
-        css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.png"))
+    for reviewer, extension in _REVIEWER_MARKS.items():
+        css = css.replace(f"__MARK_{reviewer.upper()}__", _encoded(f"reviewer-{reviewer}.{extension}"))
     if assistants:
         for assistant in ("openai", "claude", "mistral"):
             css = css.replace(f"__ASK_{assistant.upper()}__", _encoded(f"assistant-{assistant}.svg"))

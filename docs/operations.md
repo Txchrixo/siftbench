@@ -58,6 +58,8 @@ reviewbench compare-runs --before dist/cohort-a/results.json --after dist/cohort
 
 Audit reads GitHub without changing the campaign. Exit code `2` means at least one source could not be verified. Review the details before treating an absence as zero findings. Run comparisons require matching pinned case inputs and rubric bytes. Use the paired sample rows to inspect cases and repetitions that completed in both runs, and use the separate coverage counts to see where the set changed. An unscored sample contributes no score.
 
+To add a provider without rerunning the archived reviewers, generate its result bundle separately, then run `reviewbench extend-report` with both bundles and their pinned manifests. It requires disjoint reviewers, identical inputs and the same loaded rubric. The expanded report lists both source runs and scores only completed shared case conditions. Keep the source bundles for individual GitHub audits.
+
 Operational metrics display the number of observations along with p50 and p95 timing. First useful finding uses the original publication time of the first finding confirmed by the rubric. False positives per PR use fully graded samples. Severe misses require a severity-tagged rubric. Cost is optional. Supply `report --costs` with a JSON array of `attempt_id`, `currency`, `amount_minor`, and `source` records based on observed billing. Keep unmeasured values absent. View a small sample's actual counts alongside its percentages and percentiles.
 
 ## 5. Share the appropriate artifact

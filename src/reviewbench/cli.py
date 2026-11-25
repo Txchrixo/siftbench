@@ -141,6 +141,13 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--github-reconciliation", type=Path, help="Link additional GitHub conversation comments without changing scores")
     report.add_argument("--finding-groups", type=Path, help="Attach manually verified groups of additional findings")
     report.add_argument("--costs", type=Path, help="Attach observed cost evidence keyed by attempt ID")
+    extension = commands.add_parser("extend-report", help="Add a distinct reviewer campaign to an existing report on identical inputs")
+    extension.add_argument("--baseline", type=Path, required=True)
+    extension.add_argument("--baseline-manifest", type=Path, required=True)
+    extension.add_argument("--addition", type=Path, required=True)
+    extension.add_argument("--addition-manifest", type=Path, required=True)
+    extension.add_argument("--run-id", required=True)
+    extension.add_argument("--out", type=Path, required=True)
     audit = commands.add_parser("audit", help="Reconcile a frozen bundle with GitHub without changing remote or local run state")
     audit.add_argument("--manifest", type=Path, required=True)
     audit.add_argument("--bundle", type=Path, required=True)
@@ -248,6 +255,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.costs:
                 attach_costs(bundle, json.loads(args.costs.read_bytes()))
             builder.write(bundle, args.out)
+        elif args.command == "extend-report":
+            from .analysis import extend_campaign
+
+            builder = ReportBuilder()
+            combined = extend_campaign(builder.load_bundle(args.baseline), ManifestLoader.load(args.baseline_manifest),
+                                       builder.load_bundle(args.addition), ManifestLoader.load(args.addition_manifest),
+                                       run_id=args.run_id)
+            builder.write(combined, args.out)
         elif args.command == "audit":
             manifest = ManifestLoader.load(args.manifest)
             result = audit_campaign(ReportBuilder.load_bundle(args.bundle), manifest, _live_client(manifest))

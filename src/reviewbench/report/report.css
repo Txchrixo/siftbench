@@ -314,6 +314,7 @@ a.state:hover { text-decoration: underline; }
 .reviewer-mark { flex: 0 0 auto; inline-size: 1rem; block-size: 1rem; background: center / contain no-repeat; }
 .reviewer-mark.greptile { background-image: url("data:image/png;base64,__MARK_GREPTILE__"); }
 .reviewer-mark.proofline { background-image: url("data:image/png;base64,__MARK_PROOFLINE__"); }
+.reviewer-mark.coderabbit { background-image: url("data:image/svg+xml;base64,__MARK_CODERABBIT__"); }
 .select-field { display: grid; min-width: 0; }
 .select-field > * { grid-area: 1 / 1; }
 .select-chevron {

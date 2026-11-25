@@ -146,6 +146,53 @@ def freeze_corpus(manifest, rubric: bytes) -> dict:
     return {"corpus_schema_version": 1, "corpus_digest": digest(canonical_json(core)), **core}
 
 
+def extend_campaign(baseline: dict, baseline_manifest, addition: dict, addition_manifest, *, run_id: str) -> dict:
+    """Add disjoint reviewers to a report after verifying both archived input sets."""
+    if baseline["fixture"] != addition["fixture"] or baseline_manifest.rubric_digest != addition_manifest.rubric_digest:
+        raise ValueError("Campaign extension requires the same rubric and execution mode")
+
+    def pinned_pairs(bundle, manifest):
+        if bundle.get("manifest_digest") != manifest.manifest_digest or bundle.get("rubric_digest") != manifest.rubric_digest:
+            raise ValueError("Campaign bundle does not match its pinned manifest and rubric")
+        expected = {pair.pair_id: pair for pair in manifest.pairs()}
+        if len(bundle["pairs"]) != len(expected) or {pair["pair_id"] for pair in bundle["pairs"]} != expected.keys():
+            raise ValueError("Campaign bundle does not cover its planned reviewer samples")
+        rows = []
+        for pair in bundle["pairs"]:
+            pin = expected[pair["pair_id"]]
+            case = pin.variant
+            if (sample_key(pair) != (case.case_id, case.condition, pin.repeat_index)
+                    or pair["provider_id"] != pin.target.provider_id
+                    or (pair.get("base_sha"), pair.get("head_sha")) != (case.base_sha, case.head_sha)
+                    or pair.get("case_title", case.title) != case.title
+                    or pair.get("input_digest", case.input_digest) != case.input_digest):
+                raise ValueError("Campaign bundle contains an input that differs from its manifest")
+            rows.append({**pair, "input_digest": case.input_digest})
+        return rows
+
+    before, after = pinned_pairs(baseline, baseline_manifest), pinned_pairs(addition, addition_manifest)
+    if _sample_index({"pairs": before}) != _sample_index({"pairs": after}):
+        raise ValueError("Campaign extension requires the same pinned inputs and repetition indexes")
+    if {pair["provider_id"] for pair in before} & {pair["provider_id"] for pair in after}:
+        raise ValueError("Campaign extension requires distinct reviewers")
+
+    references = {}
+    for pair in (*before, *after):
+        rubric = sorted(canonical_json(item) for item in pair["expected"])
+        if references.setdefault(sample_key(pair), rubric) != rubric:
+            raise ValueError("Campaigns must load the same reference findings before merging")
+
+    sources = [{"run_id": bundle["run_id"], "manifest_digest": bundle["manifest_digest"]}
+               for bundle in (baseline, addition)]
+    analysis = " ".join(filter(None, (baseline.get("analysis"),
+        "Additional reviewers were collected in a later run on the same pinned inputs. "
+        "The original campaign and the extended comparison are separate reports.")))
+    return {**baseline, "run_id": run_id, "manifest_digest": digest(canonical_json(sources)),
+            "operational_schema_version": 1, "analysis": analysis, "source_campaigns": sources,
+            "reviewer_configuration": [*baseline.get("reviewer_configuration", []), *addition.get("reviewer_configuration", [])],
+            "pairs": sorted((*before, *after), key=lambda pair: (*sample_key(pair), pair["provider_id"]))}
+
+
 def compare_campaigns(before: dict, after: dict) -> dict:
     """Require the same planned corpus and show scores on explicit matched pairs."""
     if before["fixture"] != after["fixture"] or before.get("rubric_digest") != after.get("rubric_digest"):
