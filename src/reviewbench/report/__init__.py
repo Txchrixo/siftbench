@@ -321,13 +321,12 @@ class ReportBuilder:
                         f'value="{escape(provider, quote=True)}" checked>{_reviewer_display(provider)}</label>')
         html.append('</div></div></details></fieldset>')
         html.append('</div><h2 id="selected-case" hidden></h2><p id="comparison-status" class="visually-hidden" role="status"></p>')
-        changes = {(item["base_sha"], item["head_sha"]): item["files"] for item in bundle.get("changes", [])}
-        for key, group in groups.items():
-            pairs = list(group.values())
-            revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in pairs}
-            if len(revisions) == 1:
-                self._files(html, key, changes.get(next(iter(revisions))), group)
-            self._issues(html, key, group, providers, bundle.get("finding_groups", []))
+        html.append('<div class="comparison-tabs" aria-label="Comparison views" hidden>')
+        for name, label, glyph in (("findings", "Findings", "publication"), ("problems", "Problems", "compare"),
+                                   ("files", "Files changed", "diff")):
+            html.append(f'<a id="tab-{name}" href="#comparison-{name}">{icon(glyph)}{label}'
+                        + (' <span id="file-count" class="tab-count" hidden></span>' if name == "files" else '') + '</a>')
+        html.append('</div><section id="comparison-findings" data-comparison-view="findings" aria-label="Findings">')
         html.append('<div class="comparison-grid">')
         inspections: list[str] = []
         for key, group in groups.items():
@@ -337,14 +336,26 @@ class ReportBuilder:
                     '>No reviews are available for this selection.</p>')
         html.append('<div class="inspection-list"><h2 class="inspection-heading">Finding detail</h2>')
         html.extend(inspections)
-        html.append('</div></section>')
+        html.append('</div></section><section id="comparison-problems" data-comparison-view="problems" aria-label="Problems">')
+        for key, group in groups.items():
+            self._issues(html, key, group, providers, bundle.get("finding_groups", []))
+        html.append('<p id="problems-unavailable" class="empty" hidden>Select a case and at least one reviewer to compare problems.</p></section>')
+        html.append('<section id="comparison-files" data-comparison-view="files" aria-label="Files changed">')
+        changes = {(item["base_sha"], item["head_sha"]): item["files"] for item in bundle.get("changes", [])}
+        for key, group in groups.items():
+            pairs = list(group.values())
+            revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in pairs}
+            if len(revisions) == 1:
+                self._files(html, key, changes.get(next(iter(revisions))), group)
+        html.append('<p id="files-unavailable" class="empty" hidden>No shared pinned diff is available for this case.</p></section></section>')
 
     @staticmethod
     def _files(html: list[str], key: str, changes: list[dict] | None, group: dict) -> None:
         if changes is None:
             return
-        html.append(f'<details class="case-files" data-context-case="{escape(key, quote=True)}">'
-                    f'<summary>{icon("diff")}Files changed <span>{len(changes)}</span></summary>')
+        case = escape(key, quote=True)
+        html.append(f'<div class="case-files" data-context-case="{case}" data-file-count="{len(changes)}">')
+        html.append('<h3 class="file-section-heading">Files changed</h3>')
         html.append('<div class="diff-toolbar" hidden>'
                     '<label class="diff-view-control"><input type="checkbox" data-split-diff> Side-by-side diff</label>')
         if len(changes) > 1:
@@ -357,29 +368,32 @@ class ReportBuilder:
                 side = claim.get("diff_side")
                 if path and line.isdigit() and side in ("LEFT", "RIGHT") and claim.get("diff_hunk"):
                     title, severity, body = review_text(claim["body"])
+                    heading = inline(title or "Review comment")
                     location = f'{side[0]}{line}'
                     source = _link(claim.get("source_url"))
                     original = f'<a href="{source}">{icon("external")}GitHub comment</a>' if source else ''
                     comment = (f'<details class="diff-comment" data-diff-provider="{escape(provider)}">'
                                f'<summary><code class="diff-location">{location}</code>{_reviewer_display(provider)} '
-                               f'<strong>{inline(title or "Review comment")}</strong></summary>'
+                               f'<strong class="diff-comment-title">{heading}</strong></summary>'
+                               f'<div class="diff-comment-body"><h4>{heading}</h4>'
                                + (f'<p class="diff-severity">Reviewer severity · {escape(severity)}</p>' if severity else '') +
-                               f'<div class="review-copy">{blocks(body)}</div>'
+                               f'<div class="review-copy">{blocks(body)}</div></div>'
                                f'<div class="diff-comment-links"><a href="#claim-{claim["claim_id"]}">Open finding and evidence</a>'
                                f'{original}</div></details>')
                     annotations.setdefault(path, {}).setdefault((side, line), []).append(comment)
-        for item in changes:
+        for index, item in enumerate(changes):
             path = item["path"]
             count = "Binary" if item["added"] is None else f'+{item["added"]} / −{item["removed"]}'
-            auto_open = ' open' if len(changes) == 1 else ''
-            html.append(f'<details class="changed-file" data-file-path="{escape(path, quote=True)}"{auto_open}>'
+            auto_open = ' open' if index == 0 else ''
+            html.append(f'<details class="changed-file" name="changed-file-{case}" '
+                        f'data-file-path="{escape(path, quote=True)}"{auto_open}>'
                         f'<summary>{icon("file")}<code>{escape(path)}</code><span>{count}</span></summary>'
                         f'{render_file_patch(item["patch"], path, annotations.get(path))}</details>')
         if len(changes) > 1:
             html.append('<p class="empty" data-no-files role="status" hidden>No file paths match this filter.</p>')
         if not changes:
             html.append('<p class="empty">These commits have no file changes.</p>')
-        html.append('</details>')
+        html.append('</div>')
 
     @staticmethod
     def _issues(html: list[str], key: str, group: dict, providers: list[str], verified: list[dict]) -> None:

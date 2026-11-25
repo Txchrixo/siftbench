@@ -13,6 +13,12 @@ const issueColumns = [...document.querySelectorAll("[data-issue-provider]")];
 const diffComments = [...document.querySelectorAll("[data-diff-provider]")];
 const diffControls = [...document.querySelectorAll("[data-split-diff]")];
 const comparisonView = document.querySelector("#comparison");
+const comparisonTabs = comparisonView.querySelector(".comparison-tabs");
+const tabs = [...comparisonTabs.querySelectorAll("a")];
+const tabPanels = [...comparisonView.querySelectorAll("[data-comparison-view]")];
+const fileCount = document.querySelector("#file-count");
+const filesUnavailable = document.querySelector("#files-unavailable");
+const problemsUnavailable = document.querySelector("#problems-unavailable");
 const issueScrollHints = [...document.querySelectorAll(".issue-scroll-hint")];
 const inspections = document.querySelector(".inspection-list");
 const details = [...inspections.querySelectorAll("[data-pair]")];
@@ -61,6 +67,11 @@ function showComparison(announce = false, requestedClaim = "") {
     const comparisonsHidden = context.classList.contains("case-issues") && !selectedReviewers.length;
     context.hidden = context.dataset.contextCase !== cases.value || comparisonsHidden;
   }
+  const currentFiles = contexts.find(context => context.classList.contains("case-files") && !context.hidden);
+  fileCount.textContent = currentFiles?.dataset.fileCount ?? "";
+  fileCount.hidden = !currentFiles;
+  filesUnavailable.hidden = Boolean(currentFiles);
+  problemsUnavailable.hidden = Boolean(cases.value && selectedReviewers.length);
   for (const column of issueColumns) column.hidden = !selectedReviewers.includes(column.dataset.issueProvider);
   for (const comment of diffComments) comment.hidden = !selectedReviewers.includes(comment.dataset.diffProvider);
   for (const hint of issueScrollHints) hint.hidden = selectedReviewers.length < 3;
@@ -73,8 +84,7 @@ function showComparison(announce = false, requestedClaim = "") {
   selectedCase.textContent = caseOption?.dataset.title || "";
   selectedCase.hidden = !selectedCase.textContent;
   const links = visible.flatMap(panel => [...panel.querySelectorAll(".claim-index a")]);
-  const active = links.find(link => link.hash === (requestedClaim || activeClaim))
-    || links.find(link => link.dataset.decision !== "out_of_scope") || links[0];
+  const active = links.find(link => link.hash === (requestedClaim || activeClaim));
   activeClaim = active?.hash || "";
   links.forEach(link => {
     if (link === active) link.setAttribute("aria-current", "true");
@@ -101,6 +111,22 @@ function showRoute(scroll = true) {
     else link.removeAttribute("aria-current");
   }
 
+  if (currentView === comparisonView) {
+    const activePanel = target?.closest("[data-comparison-view]") || tabPanels[0];
+    for (const tabPanel of tabPanels) tabPanel.hidden = tabPanel !== activePanel;
+    for (const tab of tabs) {
+      const selected = tab.hash === `#${activePanel.id}`;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    if (target === activePanel) {
+      const tab = tabs.find(item => item.hash === `#${activePanel.id}`);
+      tab.focus({ preventScroll: true });
+      if (scroll) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
+  }
+
   const panel = target?.dataset.pair ? document.getElementById(target.dataset.pair) : target?.closest("[data-case]");
   if (panel) {
     cases.value = panel.dataset.case;
@@ -114,6 +140,31 @@ function showRoute(scroll = true) {
     destination.scrollIntoView({ block: "start" });
   }
 }
+
+comparisonTabs.setAttribute("role", "tablist");
+for (const [index, tab] of tabs.entries()) {
+  const panel = tabPanels[index];
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-controls", panel.id);
+  panel.setAttribute("role", "tabpanel");
+  panel.setAttribute("aria-labelledby", tab.id);
+  panel.tabIndex = 0;
+}
+comparisonTabs.addEventListener("keydown", event => {
+  const index = tabs.indexOf(event.target);
+  if (index === -1) return;
+  const next = {ArrowLeft: (index + tabs.length - 1) % tabs.length, ArrowRight: (index + 1) % tabs.length,
+    Home: 0, End: tabs.length - 1}[event.key];
+  if (next !== undefined) {
+    event.preventDefault();
+    for (const [position, tab] of tabs.entries()) tab.tabIndex = position === next ? 0 : -1;
+    tabs[next].focus();
+  } else if (event.key === " ") {
+    event.preventDefault();
+    tabs[index].click();
+  }
+});
+comparisonTabs.hidden = !panels.length;
 
 if (panels.length) {
   controls.hidden = false;
@@ -168,7 +219,12 @@ document.addEventListener("pointerdown", event => {
 
 document.addEventListener("click", event => {
   const link = event.target.closest('a[href^="#"]');
-  if (link && link.hash === location.hash && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+  if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  if (tabs.includes(link)) {
+    event.preventDefault();
+    if (link.hash !== location.hash) history.pushState(null, "", link.hash);
+    showRoute(false);
+  } else if (link.hash === location.hash) {
     event.preventDefault();
     showRoute();
   }
