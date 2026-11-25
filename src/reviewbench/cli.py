@@ -131,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     grade_role.add_argument("--adjudicator-id", help="Record a final verdict after two independent assessments")
     grade_assessments = grade.add_parser("assessments", help="Export private assessment history for adjudication")
     grade_assessments.add_argument("--run-id", required=True)
+    grade_agree = grade.add_parser("agree", help="Compare independent annotators with the recorded verdicts in a bundle")
+    grade_agree.add_argument("--bundle", type=Path, required=True)
+    grade_agree.add_argument("--annotator", action="append", required=True, metavar="KIND:NAME=PATH",
+                             help="An annotator's verdict file. KIND is ai or human. Repeat for each annotator")
+    grade_agree.add_argument("--out", type=Path, required=True)
     report = commands.add_parser("report")
     report_source = report.add_mutually_exclusive_group(required=True)
     report_source.add_argument("--run-id")
@@ -141,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--github-reconciliation", type=Path, help="Link additional GitHub conversation comments without changing scores")
     report.add_argument("--finding-groups", type=Path, help="Attach manually verified groups of additional findings")
     report.add_argument("--costs", type=Path, help="Attach observed cost evidence keyed by attempt ID")
+    report.add_argument("--agreement", type=Path, help="Attach an annotator agreement summary from grade agree")
     extension = commands.add_parser("extend-report", help="Add a distinct reviewer campaign to an existing report on identical inputs")
     extension.add_argument("--baseline", type=Path, required=True)
     extension.add_argument("--baseline-manifest", type=Path, required=True)
@@ -238,6 +244,22 @@ def main(argv: list[str] | None = None) -> int:
                 args.out.write_bytes(b"".join(canonical_json(row) + b"\n" for row in rows))
             elif args.grade_action == "assessments":
                 _print_json(assessments_for_run(store, args.run_id))
+            elif args.grade_action == "agree":
+                from .agreement import compare, load_annotations
+
+                bundle = ReportBuilder.load_bundle(args.bundle)
+                annotators = []
+                for spec in args.annotator:
+                    label, _, path = spec.partition("=")
+                    kind, _, name = label.partition(":")
+                    if not path or not name:
+                        raise ValueError("Use --annotator KIND:NAME=PATH")
+                    annotators.append({"name": name, "kind": kind, "decisions": load_annotations(Path(path))})
+                final = {claim["claim_id"]: claim["decision"] for pair in bundle["pairs"] for claim in pair["claims"]}
+                result = compare(annotators, final)
+                _write_json(args.out, result)
+                _print_json({key: result[key] for key in ("claims", "agreement", "kappa", "kappa_label", "kappa_method")}
+                            | {"disagreements": len(result["disagreements"])})
             else:
                 VerdictImporter(store).load(args.run_id, args.rubric, args.input,
                                             grader_id=args.grader_id, adjudicator_id=args.adjudicator_id)
@@ -254,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
                 bundle["finding_groups"] = json.loads(args.finding_groups.read_bytes())
             if args.costs:
                 attach_costs(bundle, json.loads(args.costs.read_bytes()))
+            if args.agreement:
+                bundle["annotation_agreement"] = json.loads(args.agreement.read_bytes())
             builder.write(bundle, args.out)
         elif args.command == "extend-report":
             from .analysis import extend_campaign

@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import re
+from collections import Counter
 from math import isfinite
 from html import escape
 from importlib.resources import files
@@ -175,6 +176,57 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
                + "".join(f'<ol class="interval-ticks subtle" aria-hidden="true">{ticks}</ol>' for _ in metrics)
                + '</div></figure></details>')
     return "".join(out)
+
+
+def _agreement_html(agreement: object, bundle: dict) -> str:
+    """The annotator agreement summary attached to a report, with the findings the annotators split on."""
+    if not isinstance(agreement, dict):
+        return ""
+    try:
+        annotators = agreement["annotators"]
+        kinds = Counter(item["kind"] for item in annotators)
+        names = [item["name"] for item in annotators]
+        who = " and ".join(f"{count} {kind.upper() if kind == 'ai' else kind}" for kind, count in sorted(kinds.items()))
+        kappa = agreement["kappa"]
+        found = {claim["claim_id"]: (pair, claim) for pair in bundle["pairs"] for claim in pair["claims"]}
+        shown = "Not defined" if kappa is None else f"{kappa:.2f}"
+        out = ['<details class="agreement"><summary>Grading agreement</summary>'
+               f'<p class="agreement-lead">{escape(who)} annotator{"s" if len(annotators) != 1 else ""} judged '
+               f'{agreement["claims"]} findings independently, without seeing each other or the recorded verdicts.</p>'
+               '<dl class="agreement-stats">'
+               f'<div><dt>Unanimous</dt><dd>{agreement["unanimous"]} of {agreement["claims"]}'
+               f'<small>{agreement["agreement"]:.0%} identical verdicts</small></dd></div>'
+               f'<div><dt>{escape(agreement["kappa_method"])} kappa{info("agreement")}</dt><dd>{shown}'
+               f'<small>{escape(agreement["kappa_label"])}</small></dd></div>'
+               f'<div><dt>Majority matches record</dt><dd>{agreement["matches_recorded_verdict"]} of {agreement["claims"]}'
+               '<small>recorded verdicts the panel confirms</small></dd></div></dl>']
+        split = agreement["disagreements"]
+        if split:
+            out.append('<p class="agreement-note subtle">Listed below: findings where the annotators split, or where their majority differs from the recorded verdict.</p>')
+            out.append('<div class="scroll agreement-table" tabindex="0" role="region" aria-label="Findings where annotators split or differ from the recorded verdict">'
+                       '<table><thead><tr><th scope="col">Finding</th>'
+                       + "".join(f'<th scope="col">{escape(name)}</th>' for name in names)
+                       + '<th scope="col">Recorded</th></tr></thead><tbody>')
+            for item in split:
+                pair, claim = found[item["claim_id"]]
+                title, _, _ = review_text(claim["body"])
+                heading = inline(title) if title else "Reviewer comment"
+                where = escape(claim.get("source_locator") or "General message")
+                out.append(f'<tr><th scope="row"><a href="#claim-{claim["claim_id"]}">{heading}</a>'
+                           f'<span class="coverage-case">{escape(_reviewer(pair["provider_id"]))} · {escape(_case_title(pair))} · {where}</span></th>')
+                for name in names:
+                    decision = item["decisions"][name]
+                    out.append(f'<td><span class="verdict {decision}">{escape(_label(decision))}</span></td>')
+                recorded = item["recorded"]
+                out.append(f'<td><span class="verdict {recorded or "ungraded"}">{escape(_label(recorded))}</span></td></tr>')
+            out.append('</tbody></table></div>')
+        else:
+            out.append('<p class="agreement-note subtle">The annotators agreed with each other and with the recorded verdict on every finding.</p>')
+        out.append('<p class="agreement-note subtle">AI annotators share training and can make the same mistakes, so agreement among them '
+                   'is not proof. Disagreements are for a human to settle.</p></details>')
+        return "".join(out)
+    except (KeyError, TypeError, ValueError):
+        return ""
 
 
 def _label(value: str | None) -> str:
@@ -433,7 +485,8 @@ class ReportBuilder:
                 numbers.setdefault((pair["case_id"], pair["condition"]), set()).add(_pull_number(pair.get("pr_url")))
         case_titles = {key: (title, " · ".join(f"#{number}" for number in sorted(numbers.get(key, set()) - {""}, key=int)))
                        for key, title in case_titles.items()}
-        self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"))
+        self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"),
+                     agreement=_agreement_html(bundle.get("annotation_agreement"), bundle))
         if operational:
             self._operations(html, bundle)
         html.append('</section>')
@@ -609,7 +662,7 @@ class ReportBuilder:
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict,
-                *, analysis: str | None = None) -> None:
+                *, analysis: str | None = None, agreement: str = "") -> None:
         html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
         if shared:
             html.append(f'<p class="subtle">Scores use only the case conditions completed by every reviewer.{info("interval")}</p>')
@@ -655,6 +708,7 @@ class ReportBuilder:
                     sentences.append(item)
             html.append('<details><summary>Campaign methodology</summary><ul class="scope-methodology">'
                         + "".join(f"<li>{escape(item)}</li>" for item in sentences) + '</ul></details>')
+        html.append(agreement)
         html.append('</aside></div>')
 
     @staticmethod

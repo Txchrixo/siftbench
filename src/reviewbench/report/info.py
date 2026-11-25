@@ -96,6 +96,16 @@ _ENTRIES: dict[str, dict] = {
         ),
         "note": "For times, Likely is the range of the median, and 95% within is the time 95% of reviews finished under. Both appear from 5 observations.",
     },
+    "agreement": {
+        "kind": "Grading", "tone": "hl", "title": "Cohen's and Fleiss' kappa",
+        "lead": 'How much the annotators agree, <b class="hl">after removing the agreement chance would give</b>.',
+        "points": (
+            ("hl", "1 = perfect", "They agree on everything. 0 means no better than guessing."),
+            ("mute", "Reading it", "Below 0.4 is weak, 0.6 to 0.8 is substantial, above 0.8 is almost perfect."),
+            ("warn", "Small sample", "With few findings and mostly one verdict, kappa swings wildly or is not defined."),
+        ),
+        "note": "Cohen's kappa is used for two annotators and Fleiss' for three or more.",
+    },
     "scored_conditions": {
         "kind": "Campaign total", "tone": "hl", "title": "Scored conditions",
         "lead": 'Pull request setups that <b class="hl">every reviewer completed</b>. Only these feed the score table.',

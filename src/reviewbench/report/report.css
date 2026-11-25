@@ -274,6 +274,15 @@ th:first-child { position: sticky; inset-inline-start: 0; background: var(--surf
 .range-label { color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .reading-facts { display: grid; gap: .125rem; margin-block-start: var(--space-1); color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
 .reading-facts b { margin-inline-end: .25rem; color: var(--text-primary); font-weight: 650; }
+.agreement-lead { margin: 0; padding: var(--space-3) var(--panel-inset) 0; font-size: .875rem; color: var(--text-secondary); }
+.agreement-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-4); margin: 0; padding: var(--space-3) var(--panel-inset); }
+.agreement-stats dt { display: flex; align-items: center; color: var(--text-secondary); font-size: .8125rem; }
+.agreement-stats dd { margin: var(--space-1) 0 0; font-size: 1.25rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.agreement-stats small { display: block; color: var(--text-secondary); font-size: .75rem; font-weight: 500; }
+.agreement-table { margin-inline: var(--panel-inset); }
+.agreement-table td { white-space: nowrap; font-size: .8125rem; }
+.agreement-note { margin: 0; padding: var(--space-3) var(--panel-inset); font-size: .8125rem; }
+.verdict.out_of_scope, .verdict.duplicate, .verdict.ungraded { color: var(--text-secondary); }
 .score-ratio { display: block; margin-top: var(--space-1); color: var(--text-secondary); font-size: .8125rem; }
 .additional-scores table { min-inline-size: 34rem; }
 .interval-details:not([open]) > summary { border-radius: 0; }
