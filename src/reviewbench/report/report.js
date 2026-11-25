@@ -86,6 +86,7 @@ function showComparison(announce = false, requestedClaim = "") {
   const links = visible.flatMap(panel => [...panel.querySelectorAll(".claim-index a")]);
   const active = links.find(link => link.hash === (requestedClaim || activeClaim));
   activeClaim = active?.hash || "";
+  if (requestedClaim && active) active.closest(".claim-group").open = true;
   links.forEach(link => {
     if (link === active) link.setAttribute("aria-current", "true");
     else link.removeAttribute("aria-current");
@@ -101,7 +102,7 @@ function showComparison(announce = false, requestedClaim = "") {
   }
 }
 
-function showRoute(scroll = true) {
+function showRoute(scroll = true, focus = true) {
   const target = document.getElementById(location.hash.slice(1));
   currentView = target?.closest("[data-report-view]") || (target?.id === "main" ? currentView : overview);
   if (currentView.id !== "comparison") reviewerSelect.open = false;
@@ -121,7 +122,7 @@ function showRoute(scroll = true) {
     }
     if (target === activePanel) {
       const tab = tabs.find(item => item.hash === `#${activePanel.id}`);
-      tab.focus({ preventScroll: true });
+      if (focus) tab.focus({ preventScroll: true });
       if (scroll) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
       return;
     }
@@ -136,7 +137,7 @@ function showRoute(scroll = true) {
   }
   if (scroll) {
     const destination = target || currentView;
-    destination.focus({ preventScroll: true });
+    if (focus) destination.focus({ preventScroll: true });
     destination.scrollIntoView({ block: "start" });
   }
 }
@@ -255,4 +256,4 @@ if (typeof dialog?.showModal === "function") {
 }
 
 showComparison();
-showRoute(Boolean(location.hash));
+showRoute(Boolean(location.hash), false);

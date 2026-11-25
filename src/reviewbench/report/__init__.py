@@ -593,7 +593,7 @@ class ReportBuilder:
         for subset, label, tag in ((messages, "Review messages", "ul"), (findings, "Captured findings", "ol")):
             if not subset:
                 continue
-            html.append(f'<h4 class="claim-group">{label} <span>{len(subset)}</span></h4>')
+            html.append(f'<details class="claim-group" open><summary>{label} <span>{len(subset)}</span></summary>')
             html.append(f'<{tag} class="claim-index" role="list">')
             for index, claim in enumerate(subset, start=1):
                 title, severity, body = review_text(claim["body"])
@@ -613,7 +613,7 @@ class ReportBuilder:
                     html.append(f'<code>{locator}</code>')
                 html.append('</span></a></li>')
                 ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture, status)
-            html.append(f'</{tag}>')
+            html.append(f'</{tag}></details>')
         if conversation := [url for raw in pair.get("conversation_links", []) if (url := _link(raw))]:
             html.append(f'<details class="review-publication"><summary>{icon("publication")}GitHub Conversation '
                         f'<span>{len(conversation)}</span></summary><p class="subtle">Additional reviewer comments outside the scored capture.</p>')

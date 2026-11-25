@@ -47,6 +47,7 @@ a {
 }
 a:hover { color: var(--text-primary); }
 :focus-visible { outline: 2px solid var(--info); outline-offset: 3px; }
+:is(main, [data-report-view])[tabindex="-1"]:focus-visible { outline: none; }
 .subtle { color: var(--text-secondary); }
 
 .visually-hidden, .skip-link:not(:focus) {
@@ -290,12 +291,10 @@ a.state:hover { text-decoration: underline; }
 #reviewer-select.opens-up .reviewer-panel { inset: auto 0 calc(100% + var(--space-1)); }
 .reviewer-option { position: relative; display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: center; gap: .45rem; min-height: var(--control-size); padding: .45rem .55rem; border-radius: .35rem; cursor: pointer; }
 .reviewer-option:hover, .reviewer-option:has(input:focus-visible) { background: var(--secondary); }
-.reviewer-option:has(input:checked) { background: var(--selected-surface); }
 .reviewer-option:has(input:focus-visible) { outline: 2px solid var(--info); outline-offset: -2px; }
 .reviewer-option input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .reviewer-option > .report-icon { visibility: hidden; color: var(--info); }
 .reviewer-option input:checked + .report-icon { visibility: visible; }
-.reviewer-option input:checked ~ .reviewer-name { font-weight: 800; }
 .reviewer-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
 #reviewer-count { flex: 0 0 auto; color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
 .reviewer-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
@@ -371,7 +370,6 @@ select:hover { border-color: var(--text-secondary); }
     white-space: normal;
   }
   option:hover, option:focus-visible { background: var(--secondary); }
-  option:checked { background: var(--selected-surface); font-weight: 800; }
   option::checkmark { display: none; }
   option .option-check { display: inline-flex; flex: 0 0 1rem; visibility: hidden; color: var(--info); }
   option:checked .option-check { visibility: visible; }
@@ -428,8 +426,9 @@ select:hover { border-color: var(--text-secondary); }
 .diff-comment-body { padding: var(--space-3); overflow-wrap: anywhere; }
 .diff-comment-body h4 { margin: 0 0 var(--space-1); font-size: .9375rem; }
 .diff-severity { margin: 0 0 var(--space-2); color: var(--text-secondary); }
-.claim-group { margin: var(--space-4) 0 var(--space-2); font-size: .875rem; color: var(--text-secondary); }
-.claim-group span { margin-inline-start: var(--space-2); }
+.claim-group { margin-top: var(--space-3); border-top: 1px solid var(--border); }
+.claim-group[open] > summary:not(:hover) { background: transparent; color: var(--text-secondary); }
+.claim-group > summary:focus-visible { outline-offset: -2px; }
 .claim-order { display: none; margin-block-end: var(--space-3); font-size: .8125rem; }
 #comparison-findings:has(.findings:not([hidden]) ol .claim-meta code) > .claim-order { display: block; }
 .diff-comment-title { flex: 1 1 0; color: var(--text-primary); }
@@ -482,7 +481,7 @@ select:hover { border-color: var(--text-secondary); }
 .review-meta a, .source-link { display: inline-flex; align-items: center; gap: .35rem; min-height: var(--control-size); }
 .review-meta a:hover, .source-link:hover { text-decoration-thickness: 2px; }
 .finding { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
-.claim-index { list-style: none; padding: 0; margin: var(--space-3) 0 0; }
+.claim-index { list-style: none; padding: 0; margin: var(--space-1) 0 0; }
 .claim-index li + li { margin-top: var(--space-1); }
 .claim-index a {
   display: grid;
