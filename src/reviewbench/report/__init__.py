@@ -328,6 +328,7 @@ class ReportBuilder:
             html.append(f'<a id="tab-{name}" href="#comparison-{name}">{icon(glyph)}{label}'
                         + (' <span id="file-count" class="tab-count" hidden></span>' if name == "files" else '') + '</a>')
         html.append('</div><section id="comparison-findings" data-comparison-view="findings" aria-label="Findings">')
+        html.append('<p class="claim-order subtle">Findings are ordered by file and line when available.</p>')
         html.append('<div class="comparison-grid">')
         inspections: list[str] = []
         for key, group in groups.items():
@@ -477,8 +478,6 @@ class ReportBuilder:
             if not subset:
                 continue
             html.append(f'<h4 class="claim-group">{label} <span>{len(subset)}</span></h4>')
-            if tag == "ol" and len(subset) > 1 and file_position(subset[0])[0] == 0:
-                html.append('<p class="claim-order subtle">Ordered by file and line</p>')
             html.append(f'<{tag} class="claim-index" role="list">')
             for index, claim in enumerate(subset, start=1):
                 title, severity, body = review_text(claim["body"])

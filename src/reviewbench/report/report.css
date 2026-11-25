@@ -370,7 +370,8 @@ select:hover { border-color: var(--text-secondary); }
 .diff-severity { margin: 0 0 var(--space-2); color: var(--text-secondary); }
 .claim-group { margin: var(--space-4) 0 var(--space-2); font-size: .875rem; color: var(--text-secondary); }
 .claim-group span { margin-inline-start: var(--space-2); }
-.claim-order { font-size: .8125rem; }
+.claim-order { display: none; margin-block-end: var(--space-3); font-size: .8125rem; }
+#comparison-findings:has(.findings:not([hidden]) ol .claim-meta code) > .claim-order { display: block; }
 .diff-comment-title { flex: 1 1 0; color: var(--text-primary); }
 .diff-comment-links { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); border-top: 1px solid var(--border); padding-inline: var(--space-3); }
 .diff-comment-links a { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--control-size); }
