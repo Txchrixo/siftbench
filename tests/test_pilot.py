@@ -75,8 +75,8 @@ def test_fixture_replay_from_capture_through_report(tmp_path, manifest_data):
     assert f'class="reference-state detected" href="#claim-{claim["claim_id"]}"' in html
     assert 'class="reference-state missed" href="#pair-' in html
     assert "#discussion_r1" in html and "Expected ID 42" in html
-    assert f'Pinned head <code>{manifest.cases[0].head_sha}</code>' in html
-    assert f'Base <code>{manifest.cases[0].base_sha}</code>' in html
+    assert f'data-copy="{manifest.cases[0].head_sha}"' in html
+    assert f'data-copy="{manifest.cases[0].base_sha}"' in html
     preview = html.split('<textarea id="benchmark-prompt"', 1)[1].split('</textarea>', 1)[0]
     assert "2 of 2 review attempts completed" in preview and "This report uses fixture data" in preview
     assert "A row with the same timestamp" not in preview and "Expected ID 42" not in preview

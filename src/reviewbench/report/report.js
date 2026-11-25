@@ -5,7 +5,6 @@ const reviewerSelect = document.querySelector("#reviewer-select");
 const reviewerTrigger = reviewerSelect.querySelector("summary");
 const reviewerPreview = document.querySelector("#reviewer-preview");
 const reviewerCount = document.querySelector("#reviewer-count");
-const reviewerActions = [...controls.querySelectorAll("[data-select-reviewers]")];
 const grid = document.querySelector(".comparison-grid");
 const panels = [...grid.querySelectorAll("[data-case]")];
 const contexts = [...document.querySelectorAll("[data-context-case]")];
@@ -53,10 +52,6 @@ function showComparison(announce = false, requestedClaim = "") {
   const selected = reviewerInputs.filter(input => input.checked);
   const selectedReviewers = selected.map(input => input.value);
   showReviewerSelection(selected);
-  for (const action of reviewerActions) {
-    const targetCount = action.dataset.selectReviewers === "all" ? reviewerInputs.length : 0;
-    action.setAttribute("aria-disabled", String(selectedReviewers.length === targetCount));
-  }
   const visible = selectedReviewers.map(provider =>
     panels.find(panel => panel.dataset.case === cases.value && panel.dataset.provider === provider)
   ).filter(Boolean);
@@ -172,13 +167,6 @@ comparisonTabs.hidden = !panels.length;
 if (panels.length) {
   controls.hidden = false;
   controls.addEventListener("change", () => showComparison(true));
-  for (const action of reviewerActions) {
-    action.addEventListener("click", () => {
-      if (action.getAttribute("aria-disabled") === "true") return;
-      for (const input of reviewerInputs) input.checked = action.dataset.selectReviewers === "all";
-      showComparison(true);
-    });
-  }
 }
 
 function setDiffView(split) {
@@ -243,7 +231,7 @@ document.addEventListener("click", async event => {
   const status = block.querySelector(".prompt-status");
   try {
     await navigator.clipboard.writeText(code.textContent);
-    status.textContent = "Prompt copied.";
+    status.textContent = `${button.dataset.subject || "Prompt"} copied.`;
   } catch {
     code.parentElement.focus();
     const selection = window.getSelection();
@@ -251,7 +239,7 @@ document.addEventListener("click", async event => {
     range.selectNodeContents(code);
     selection.removeAllRanges();
     selection.addRange(range);
-    status.textContent = "Prompt selected. Use your device’s copy command.";
+    status.textContent = `${button.dataset.subject || "Prompt"} selected. Use your device’s copy command.`;
   }
 });
 
@@ -276,6 +264,42 @@ if (typeof dialog?.showModal === "function") {
       copyStatus.textContent = "Text selected. Use your device’s copy command.";
     }
   });
+}
+
+for (const figure of document.querySelectorAll(".latency-figure")) {
+  const tip = figure.querySelector(".latency-tip");
+  const place = (x, y) => {
+    const box = figure.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(x - box.left - width / 2, 0), box.width - width);
+    const above = y - box.top - tip.offsetHeight - 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${above < 0 ? y - box.top + 22 : above}px`;
+  };
+  const show = (point, x, y) => {
+    const { tipTitle, tipContext, tipValue } = point.dataset;
+    const title = document.createElement("strong");
+    title.textContent = tipTitle;
+    const context = document.createElement("span");
+    context.textContent = tipContext;
+    const value = document.createElement("output");
+    value.textContent = tipValue;
+    tip.replaceChildren(title, context, value);
+    tip.hidden = false;
+    place(x, y);
+  };
+  const hide = () => { tip.hidden = true; };
+  for (const point of figure.querySelectorAll(".latency-point")) {
+    point.addEventListener("pointerenter", event => show(point, event.clientX, event.clientY));
+    point.addEventListener("pointermove", event => place(event.clientX, event.clientY));
+    point.addEventListener("pointerleave", hide);
+    point.addEventListener("focus", () => {
+      const dot = point.querySelector(".latency-dot").getBoundingClientRect();
+      show(point, dot.left + dot.width / 2, dot.top + dot.height / 2);
+    });
+    point.addEventListener("blur", hide);
+  }
+  figure.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
 }
 
 showComparison();

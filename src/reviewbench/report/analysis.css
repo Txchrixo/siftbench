@@ -92,7 +92,15 @@
 .latency-median { stroke: var(--info); stroke-width: 1.5; stroke-dasharray: 3 2; }
 .latency-dot { fill: var(--info); stroke: var(--secondary); }
 .latency-hit { fill: transparent; }
-.latency-point:is(:hover, :focus-visible) .latency-dot { fill: var(--text-primary); stroke: var(--info); stroke-width: 2; }
+.latency-point { outline: none; cursor: pointer; }
+.latency-dot { transition: r .12s ease, fill .12s ease, opacity .12s ease; }
+.latency-point:is(:hover, :focus-visible) .latency-dot { r: 6.5px; fill: var(--text-primary); stroke: var(--info); stroke-width: 2; }
+.latency-figure:has(.latency-point:is(:hover, :focus-visible)) .latency-point:not(:hover, :focus-visible) .latency-dot { opacity: .35; }
+.latency-figure { position: relative; }
+.latency-tip { position: absolute; z-index: 5; inline-size: max-content; max-inline-size: min(22rem, 90%); display: grid; gap: .125rem; padding: var(--space-2) var(--space-3); border: 1px solid var(--text-muted); border-radius: .375rem; background: var(--surface); color: var(--text-primary); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .4); font-size: .8125rem; line-height: 1.4; pointer-events: none; }
+.latency-tip strong { font-weight: 700; overflow-wrap: anywhere; }
+.latency-tip span { color: var(--text-secondary); }
+.latency-tip output { color: var(--info); font-variant-numeric: tabular-nums; font-weight: 700; }
 .latency-ticks { display: flex; justify-content: space-between; align-items: center; margin: 0; padding: 0 1.7857%; list-style: none; }
 .latency-ticks li { width: 0; display: grid; justify-content: center; }
 .latency-ticks li:first-child { justify-content: start; }
@@ -122,3 +130,15 @@
   .campaign-pair > :nth-child(2) { border-inline-start: 0; border-block-start: 1px solid var(--border); }
   .campaign-comparison .analysis-table tbody th { min-inline-size: 7.75rem; }
 }
+
+.latency-dot { transform-box: fill-box; transform-origin: center; animation: dot-in 360ms var(--ease-out) backwards; }
+.latency-point:nth-child(3n) .latency-dot { animation-delay: 60ms; }
+.latency-point:nth-child(3n+1) .latency-dot { animation-delay: 120ms; }
+.latency-point:nth-child(3n+2) .latency-dot { animation-delay: 180ms; }
+.latency-median { transform-box: fill-box; transform-origin: top; animation: median-in 420ms var(--ease-out) 200ms backwards; }
+@keyframes median-in { from { opacity: 0; transform: scaleY(0); } to { opacity: 1; transform: none; } }
+.latency-tip:not([hidden]) { animation: pop-in 140ms var(--ease-out); }
+.latency-row { transition: background-color var(--fast) ease; }
+.latency-row:not(.latency-axis):hover { background: color-mix(in srgb, var(--info) 5%, transparent); }
+.latency-data li { transition: background-color var(--fast) ease; }
+.latency-data li:hover { background: var(--surface); }

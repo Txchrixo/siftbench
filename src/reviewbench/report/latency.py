@@ -7,6 +7,7 @@ import re
 from statistics import median
 
 from ..analysis import _elapsed
+from .info import info
 from . import _case_context, _case_title, _link, _pull_number, _reviewer, _reviewer_display
 
 
@@ -42,8 +43,9 @@ def _plot_row(samples: list[tuple[float, dict]], limit: float, ticks: list[float
         title, context = _source_labels(pair, fixture)
         description = f"{title} · {context} · {seconds:g} seconds"
         source = _evidence_link(pair, fixture)
-        marks.append(f'<a class="latency-point" href="{source}" aria-label="{escape(description, quote=True)}">'
-                     f'<title>{escape(description)}</title>'
+        marks.append(f'<a class="latency-point" href="{source}" aria-label="{escape(description, quote=True)}" '
+                     f'data-tip-title="{escape(title, quote=True)}" data-tip-context="{escape(context, quote=True)}" '
+                     f'data-tip-value="{seconds:g} seconds">'
                      f'<circle class="latency-hit" cx="{x(seconds):g}" cy="{17 + lane * 13}" r="10"/>'
                      f'<circle class="latency-dot" cx="{x(seconds):g}" cy="{17 + lane * 13}" r="4.5"/></a>')
     return (f'<svg class="latency-track" viewBox="0 0 560 {height}" aria-label="Individual review times">'
@@ -86,7 +88,7 @@ def publication_latency(bundle: dict) -> str:
     ticks = [step * index for index in range(intervals + 1)]
     axis = "".join(f'<li>{tick:g}</li>' for tick in ticks)
     html = ['<figure class="latency-figure" aria-labelledby="latency-title"><figcaption>'
-            '<h3 id="latency-title">Review publication times</h3>'
+            '<h3><span id="latency-title">Review publication times</span>' + info("latency") + '</h3>'
             '<p class="subtle">Each dot is an observed review. Select it to open the original evidence.</p>'
             '<p class="latency-key subtle"><span aria-hidden="true"></span>Median</p></figcaption>']
     reviewers = sorted(by_provider.items())
@@ -107,4 +109,4 @@ def publication_latency(bundle: dict) -> str:
             html.append(f'<li><div><a href="{_evidence_link(pair, bundle["fixture"])}">{escape(title)}</a>'
                         f'<small class="subtle">{escape(context)}</small></div>'
                         f'<span class="latency-duration">{seconds:g} s</span></li>')
-    return "".join(html) + "</ul></details></figure>"
+    return "".join(html) + '</ul></details><div class="latency-tip" role="presentation" hidden></div></figure>'

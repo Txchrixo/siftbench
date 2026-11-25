@@ -15,6 +15,7 @@ from .comment import blocks, inline, review_text
 from .context import publication_text, validate_context
 from .diff import render_diff, render_file_patch
 from .icons import icon
+from .info import info, info_templates
 from .issues import issue_rows
 
 
@@ -25,6 +26,16 @@ _STATES = frozenset({
     "planned", "preparing", "awaiting_trigger", "awaiting_review", "completed",
     "invalid_input", "needs_attention", "timed_out", "failed", "quota",
 })
+def _footer(navigation: bool = True) -> str:
+    return ('<footer class="report-footer"><div class="footer-top"><p class="footer-tagline">'
+            'Evidence-first benchmark for AI code reviewers.</p>'
+            + ('<nav aria-label="Footer"><a href="#overview">Overview</a><a href="#coverage">Coverage</a>'
+               '<a href="#comparison">Compare</a></nav>' if navigation else '') +
+            '<p class="footer-legal">© 2026 SiftBench. Reviewer names and logos belong to their owners.</p></div>'
+            f'<img class="footer-wordmark" alt="SiftBench" width="270" height="64" '
+            f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
+
+
 _SELECT_CHEVRON = ('<svg class="select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true" '
                    'focusable="false"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" '
                    'stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -272,7 +283,7 @@ class ReportBuilder:
 
             md.extend(operational_summary(bundle))
         css = _report_styles(operational=operational, assistants=True)
-        script = root.joinpath("report.js").read_text(encoding="utf-8")
+        script = root.joinpath("report.js").read_text(encoding="utf-8") + "\n" + root.joinpath("info.js").read_text(encoding="utf-8")
         policy = f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
         html = ["<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
                 '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -285,7 +296,7 @@ class ReportBuilder:
                 f'<a href="#comparison">{icon("compare")}Compare</a></nav></div></header><main id="main" tabindex="-1">',
                 '<section id="overview" data-report-view tabindex="-1"><header class="overview-header">'
                 '<div><h1>Campaign overview</h1>'
-                f'<p class="run-meta"><span>{scope}</span><code>{escape(bundle["run_id"])}</code></p></div>'
+                f'<p class="run-meta"><span>{scope}{info("fixture" if bundle["fixture"] else "campaign")}</span><code>{escape(bundle["run_id"])}</code></p></div>'
                 f'<div class="overview-actions"><a href="#coverage">{icon("coverage")}Check coverage</a>'
                 f'<a href="#comparison">{icon("compare")}Compare findings</a>'
                 f'<button id="ask-benchmark" type="button" aria-haspopup="dialog" hidden>{icon("ask")}Ask about this benchmark</button>'
@@ -296,12 +307,19 @@ class ReportBuilder:
         providers = list(metrics["providers"])
         completed = sum(pair["status"] == "completed" for pair in bundle["pairs"])
         html.append('<dl class="run-stats" aria-label="Campaign totals">')
-        for label, value in (("Completed attempts", f'{completed} / {len(bundle["pairs"])}'),
-                             ("Scored conditions", len(metrics["shared"])), ("Reviewers", len(providers))):
-            html.append(f'<div><dt>{label}</dt><dd>{value}</dd></div>')
+        for label, key, value in (("Completed attempts", "completed_attempts", f'{completed} / {len(bundle["pairs"])}'),
+                                  ("Scored conditions", "scored_conditions", len(metrics["shared"])),
+                                  ("Reviewers", "reviewers", len(providers))):
+            html.append(f'<div><dt>{label}{info(key)}</dt><dd>{value}</dd></div>')
         html.append('</dl>')
         case_titles = {(pair["case_id"], pair["condition"]): pair.get("case_title") for pair in bundle["pairs"]
                        if pair["repeat_index"] == 0}
+        numbers: dict[tuple[str, str], set[str]] = {}
+        for pair in bundle["pairs"]:
+            if pair["repeat_index"] == 0 and not bundle["fixture"]:
+                numbers.setdefault((pair["case_id"], pair["condition"]), set()).add(_pull_number(pair.get("pr_url")))
+        case_titles = {key: (title, " · ".join(f"#{number}" for number in sorted(numbers.get(key, set()) - {""}, key=int)))
+                       for key, title in case_titles.items()}
         self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"))
         if operational:
             self._operations(html, bundle)
@@ -311,9 +329,8 @@ class ReportBuilder:
         if rows:
             html.append(f'<!--\n{root.joinpath("LICENSE-LobeIcons.txt").read_text(encoding="utf-8")}\n-->')
             self._ask(html, bundle, rows, metrics["shared"], completed)
-        html.append('</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
-                    f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>')
-        html.append(f"<script>{script}</script></body></html>")
+        html.append(f'</main>{_footer()}')
+        html.append(f"{info_templates()}<script>{script}</script></body></html>")
         (output / "results.json").write_bytes(canonical_json(bundle) + b"\n")
         (output / "report.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
         (output / "summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
@@ -371,7 +388,7 @@ class ReportBuilder:
             html.append("<p>No cases to compare.</p></section>")
             return
         pairs = [pair for group in groups.values() for pair in group.values()]
-        html.append('<div class="coverage-heading"><h2>Cases by reviewer</h2><p class="subtle">'
+        html.append(f'<div class="coverage-heading"><h2>Cases by reviewer{info("statuses")}</h2><p class="subtle">'
                     'Scored rows contribute to the shared results.</p>')
         if len(providers) > 1:
             html.append('<p class="coverage-scroll-hint subtle">Scroll sideways to see the other reviewers.</p>')
@@ -393,7 +410,7 @@ class ReportBuilder:
             scope = "Scored" if scored else "Outside score"
             scored_class = ' is-scored' if scored else ''
             html.append(f'<span class="coverage-case">{escape(context)}</span>'
-                        f'<span class="coverage-scope{scored_class}">{scope}</span></th>')
+                        f'<span class="coverage-scope{scored_class}">{scope}{info("scope")}</span></th>')
             for provider in providers:
                 pair = group.get(provider)
                 if pair:
@@ -452,23 +469,32 @@ class ReportBuilder:
             html.append('</details>')
         html.append('</section><aside class="scoring-scope" aria-labelledby="scoring-scope-title">'
                     '<h2 id="scoring-scope-title">Scoring scope</h2>'
-                    '<details open><summary>How to read the scores</summary><dl class="metric-guide">'
-                    '<div><dt>Precision</dt><dd>Share of scored findings that were confirmed.</dd></div>'
-                    '<div><dt>Reference recall</dt><dd>Share of expected findings the reviewer caught.</dd></div>'
-                    '<div><dt>Additional findings</dt><dd>Verified findings outside the expected set.</dd></div></dl></details>'
+                    f'<details open><summary>How to read the scores</summary><dl class="metric-guide">'
+                    f'<div class="guide-precision"><dt>{icon("evidence")}Precision</dt><dd>Share of scored findings that were confirmed.</dd></div>'
+                    f'<div class="guide-recall"><dt>{icon("coverage")}Reference recall</dt><dd>Share of expected findings the reviewer caught.</dd></div>'
+                    f'<div class="guide-additional"><dt>{icon("publication")}Additional findings</dt><dd>Verified findings outside the expected set.</dd></div></dl></details>'
                     f'<details><summary>Scored case conditions <span class="scope-count">{len(shared)}</span></summary>')
         if shared:
             html.append('<ul class="scope-cases" role="list">')
             for case, condition in shared:
-                title = case_titles.get((case, condition)) or _case_name(case)
-                html.append(f'<li><strong>{escape(title)}</strong><span>{escape(_label(condition))}</span></li>')
+                title, number = case_titles.get((case, condition)) or (None, "")
+                glyph = {"code_only": "source", "snapshot": "evidence"}.get(condition, "file")
+                html.append(f'<li><span class="scope-pr">{icon("pr")}' + escape(number) + '</span>'
+                            f'<strong class="scope-title" data-truncate-tip>{escape(title or _case_name(case))}</strong>'
+                            f'<span class="scope-condition">{icon(glyph)}{escape(_label(condition))}</span></li>')
             html.append('</ul>')
         else:
             html.append('<p class="scope-empty subtle">No case conditions were completed by every reviewer.</p>')
         html.append('</details>')
         if isinstance(analysis, str) and analysis.strip():
-            html.append('<details><summary>Campaign methodology</summary>'
-                        f'<p class="scope-methodology subtle">{escape(analysis.strip())}</p></details>')
+            sentences: list[str] = []
+            for item in re.split(r"(?<=\.)\s+(?=[A-Z])", " ".join(analysis.split())):
+                if sentences and len(sentences[-1]) < 12:
+                    sentences[-1] += f" {item}"
+                elif item:
+                    sentences.append(item)
+            html.append('<details><summary>Campaign methodology</summary><ul class="scope-methodology">'
+                        + "".join(f"<li>{escape(item)}</li>" for item in sentences) + '</ul></details>')
         html.append('</aside></div>')
 
     @staticmethod
@@ -476,7 +502,7 @@ class ReportBuilder:
         kind = " main-scores" if primary else ""
         html.append(f'<div class="scroll score-table{kind}" tabindex="0" role="region" aria-label="{label}">'
                     '<table><thead><tr><th scope="col">Reviewer</th>')
-        html.extend(f'<th scope="col" class="metric">{column}</th>' for column in columns)
+        html.extend(f'<th scope="col" class="metric">{column}{info(column)}</th>' for column in columns)
         html.append('</tr></thead><tbody>')
         for row in rows:
             html.append(f'<tr><th scope="row">{_reviewer_display(row[0])}</th>')
@@ -522,9 +548,6 @@ class ReportBuilder:
                     '<details id="reviewer-select"><summary><span class="visually-hidden">Select reviewers</span>'
                     f'<span id="reviewer-preview"></span><span id="reviewer-count"></span>{_SELECT_CHEVRON}</summary>'
                     '<div class="reviewer-panel">')
-        if len(providers) > 2:
-            html.append('<div class="reviewer-actions"><button type="button" data-select-reviewers="all">Select all</button>'
-                        '<button type="button" data-select-reviewers="none">Clear selection</button></div>')
         html.append('<div class="reviewer-options">')
         for provider in providers:
             html.append(f'<label class="reviewer-option"><input type="checkbox" name="reviewer" '
@@ -537,7 +560,7 @@ class ReportBuilder:
             html.append(f'<a id="tab-{name}" href="#comparison-{name}">{icon(glyph)}{label}'
                         + (' <span id="file-count" class="tab-count" hidden></span>' if name == "files" else '') + '</a>')
         html.append('</div><section id="comparison-findings" data-comparison-view="findings" aria-label="Findings">')
-        html.append('<p class="claim-order subtle">Findings are ordered by file and line when available.</p>')
+        html.append(f'<p class="claim-order subtle">Findings are ordered by file and line when available.{info("findings")}</p>')
         html.append('<div class="comparison-grid">')
         inspections: list[str] = []
         for key, group in groups.items():
@@ -610,7 +633,7 @@ class ReportBuilder:
                 rows.append("</tr>")
         if not rows:
             return
-        html.append('<div id="reference-matrix" class="case-issues reference-matrix"><h3>Expected findings across cases</h3>'
+        html.append(f'<div id="reference-matrix" class="case-issues reference-matrix"><h3>Expected findings across cases{info("reference_findings")}</h3>'
                     '<p class="subtle">First attempt per PR and condition. Select a result to open its evidence.</p>'
                     '<p class="subtle reference-scroll-hint">Scroll the table to see more reviewers.</p>'
                     '<div class="scroll" tabindex="0" role="region" aria-label="Expected finding detection by reviewer">'
@@ -637,7 +660,8 @@ class ReportBuilder:
             html.append("</div>")
             return
         html.append('<div class="diff-toolbar" hidden>'
-                    '<label class="diff-view-control"><input type="checkbox" data-split-diff> Side-by-side diff</label>')
+                    '<label class="diff-view-control"><input type="checkbox" data-split-diff> Side-by-side diff</label>'
+                    f'{info("diff")}')
         if len(changes) > 1:
             html.append('<label class="file-filter">Filter files <input type="search" data-file-filter></label>')
         html.append('</div>')
@@ -677,7 +701,7 @@ class ReportBuilder:
     def _issues(html: list[str], key: str, group: dict, providers: list[str], verified: list[dict]) -> None:
         rows = issue_rows(group, verified)
         html.append(f'<div class="case-issues" data-context-case="{escape(key, quote=True)}">'
-                    '<h3>Compare by problem</h3>')
+                    f'<h3>Compare by problem{info("problems")}</h3>')
         if not rows:
             if not any(pair["status"] == "completed" for pair in group.values()):
                 html.append(_report_notice("publication", "No completed reviews", "Check review coverage for the status of each attempt."))
@@ -736,9 +760,19 @@ class ReportBuilder:
                 html.append(f'<a href="{pr_url}">{icon("pr")}Pull request</a>')
         html.append('</div>')
         if "head_sha" in pair:
+            repository = re.match(r"(/[^/]+/[^/]+)/pull/", urlsplit(pair.get("pr_url") or "").path)
+            rows = []
+            for label, sha in (("Base", pair["base_sha"]), ("Pinned head", pair["head_sha"])):
+                commit = _link(f"https://github.com{repository[1]}/commit/{sha}") if repository and not fixture else None
+                label_text = escape(label.lower())
+                actions = (f'<button class="sha-copy" type="button" data-copy="{sha}" aria-label="Copy full {label_text} commit ID" hidden>'
+                           f'{icon("copy")}{icon("check")}</button>')
+                if commit:
+                    actions += f'<a class="sha-open" href="{commit}" aria-label="Open {label_text} commit on GitHub">{icon("external")}</a>'
+                rows.append(f'<div><dt>{label}</dt><dd><code>{sha}</code>{actions}</dd></div>')
             html.append(f'<details class="revisions"><summary>{icon("commit")}Commit revisions</summary>'
-                        f'<p>Base <code>{pair["base_sha"]}</code></p><p>'
-                        f'Pinned head <code>{pair["head_sha"]}</code></p></details>')
+                        f'<dl class="revision-list">{"".join(rows)}</dl>'
+                        f'<p class="revision-note">The diff between these two commits is what the reviewer received. {info("revisions")}</p></details>')
         publication = pair.get("publication")
         if pair["reason"] and not (publication and status == "completed"):
             html.append(f'<p class="attempt-reason subtle">{escape(pair["reason"])}</p>')
@@ -844,7 +878,7 @@ class ReportBuilder:
         html.append('</header>')
         if locator or claim.get("diff_hunk"):
             source_label = "Captured GitHub diff" if claim.get("diff_hunk") else "Reported location"
-            html.append(f'<div class="source-panel"><div class="source-heading"><span>{source_label}</span>'
+            html.append(f'<div class="source-panel"><div class="source-heading"><span>{source_label}{info("captured_diff" if claim.get("diff_hunk") else "location")}</span>'
                         f'<code>{escape(locator)}</code></div>')
             if claim.get("diff_hunk"):
                 html.append(render_diff(claim["diff_hunk"], locator, claim.get("diff_side", "RIGHT")))
@@ -855,20 +889,23 @@ class ReportBuilder:
             html.append('<p class="source-context-note subtle">The inline comment has no recorded file or line location.</p>')
         html.append('<div class="inspection-body"><div class="observation"><h4>Reviewer comment</h4>')
         if severity:
-            html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong></p>')
+            html.append(f'<p class="severity">Reviewer severity <strong>{escape(severity)}</strong>{info("severity")}</p>')
         if rendered := blocks(body):
             html.append(f'<blockquote class="review-copy">{rendered}</blockquote>')
         else:
             html.append('<p class="subtle">No readable comment body was captured.</p>')
-        html.append(f'<details class="raw-comment"><summary>{icon("source")}Raw comment source</summary>'
-                    '<p class="subtle">Unformatted text captured with the review.</p>'
-                    f'<pre>{escape(claim["body"])}</pre></details></div>')
-        html.append('<div class="evaluation"><h4>Benchmark verdict</h4>'
+        html.append(f'<details class="review-prompt raw-comment"><summary>{icon("source")}Raw comment source</summary>'
+                    '<div class="prompt-body">'
+                    f'<pre tabindex="0" role="region" aria-label="Raw comment source"><code>{escape(claim["body"])}</code></pre>'
+                    f'<div class="prompt-tools">{info("raw_comment")}'
+                    '<button type="button" class="prompt-copy" data-subject="Raw comment" aria-label="Copy raw comment" title="Copy raw comment" hidden>'
+                    f'{icon("copy")}</button></div></div><p class="prompt-status" role="status"></p></details></div>')
+        html.append(f'<div class="evaluation"><h4>Benchmark verdict{info("verdict")}</h4>'
                     f'<p class="verdict {decision or "ungraded"}">{status}</p>')
         if claim["rationale"]:
             html.append(f'<p class="rationale">{escape(claim["rationale"])}</p>')
         if claim["evidence"]:
-            html.append(f'<div class="verification"><h5>{icon("evidence")}Verification evidence</h5>')
+            html.append(f'<div class="verification"><h5>{icon("evidence")}Verification evidence{info("evidence")}</h5>')
             for piece in claim["evidence"]:
                 html.append(f'<div class="evidence"><strong>{_label(piece["type"])}</strong>'
                             f'<p>{escape(piece["text"])}</p></div>')

@@ -5,9 +5,10 @@ from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
+from . import (_SELECT_CHEVRON, _footer, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
+from .info import info, info_templates
 from .latency import publication_latency
 from ..analysis import campaign_metrics
 from ..manifest import canonical_json
@@ -141,7 +142,7 @@ def _matrix(headers: list[tuple[str, str]], values: list[tuple], *, paired: bool
         if not observed:
             unavailable.append(label)
             continue
-        row = [f'<tr><th scope="row">{label}<span class="coverage-case">{note}</span></th>']
+        row = [f'<tr><th scope="row">{label}{info(label)}<span class="coverage-case">{note}</span></th>']
         for reading in readings:
             if paired:
                 before, after = reading
@@ -297,7 +298,8 @@ def _settings(result: dict) -> str:
 
 def write_comparison(result: dict, out: Path) -> None:
     css = _report_styles(operational=True)
-    script = files(__package__).joinpath("analysis.js").read_text(encoding="utf-8")
+    script = (files(__package__).joinpath("analysis.js").read_text(encoding="utf-8") + "\n"
+              + files(__package__).joinpath("info.js").read_text(encoding="utf-8"))
     policy = (f"default-src 'none'; style-src 'sha256-{_csp_hash(css)}'; script-src 'sha256-{_csp_hash(script)}'; "
               "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
     html = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
@@ -326,9 +328,8 @@ def write_comparison(result: dict, out: Path) -> None:
     values = [tuple(zip(_values(row["before"], paired=True), _values(row["after"], paired=True), strict=True))
               for row in reviewers]
     html.extend((_matrix(headers, values, paired=True), "</section>", _coverage(result), _settings(result),
-                 f'</main><footer class="report-footer"><img alt="SiftBench" width="270" height="64" '
-                 f'src="data:image/svg+xml;base64,{_encoded("footer-wordmark.svg")}"></footer>',
-                 f"<script>{script}</script></body></html>"))
+                 f'</main>{_footer(navigation=False)}',
+                 f"{info_templates()}<script>{script}</script></body></html>"))
     out.mkdir(parents=True, exist_ok=True)
     (out / "comparison.json").write_bytes(canonical_json(result) + b"\n")
     (out / "comparison.html").write_text("\n".join(html) + "\n", encoding="utf-8", newline="\n")
