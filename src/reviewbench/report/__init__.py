@@ -326,7 +326,7 @@ class ReportBuilder:
             pairs = list(group.values())
             revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in pairs}
             if len(revisions) == 1:
-                self._files(html, key, changes.get(next(iter(revisions))))
+                self._files(html, key, changes.get(next(iter(revisions))), group)
             self._issues(html, key, group, providers, bundle.get("finding_groups", []))
         html.append('<div class="comparison-grid">')
         inspections: list[str] = []
@@ -340,16 +340,43 @@ class ReportBuilder:
         html.append('</div></section>')
 
     @staticmethod
-    def _files(html: list[str], key: str, changes: list[dict] | None) -> None:
+    def _files(html: list[str], key: str, changes: list[dict] | None, group: dict) -> None:
         if changes is None:
             return
         html.append(f'<details class="case-files" data-context-case="{escape(key, quote=True)}">'
                     f'<summary>{icon("diff")}Files changed <span>{len(changes)}</span></summary>')
+        html.append('<div class="diff-toolbar" hidden>'
+                    '<label class="diff-view-control"><input type="checkbox" data-split-diff> Side-by-side diff</label>')
+        if len(changes) > 1:
+            html.append('<label class="file-filter">Filter files <input type="search" data-file-filter></label>')
+        html.append('</div>')
+        annotations = {}
+        for provider, pair in group.items():
+            for claim in pair["claims"]:
+                path, _, line = (claim.get("source_locator") or "").rpartition(":")
+                side = claim.get("diff_side")
+                if path and line.isdigit() and side in ("LEFT", "RIGHT") and claim.get("diff_hunk"):
+                    title, severity, body = review_text(claim["body"])
+                    location = f'{side[0]}{line}'
+                    source = _link(claim.get("source_url"))
+                    original = f'<a href="{source}">{icon("external")}GitHub comment</a>' if source else ''
+                    comment = (f'<details class="diff-comment" data-diff-provider="{escape(provider)}">'
+                               f'<summary><code class="diff-location">{location}</code>{_reviewer_display(provider)} '
+                               f'<strong>{inline(title or "Review comment")}</strong></summary>'
+                               + (f'<p class="diff-severity">Reviewer severity · {escape(severity)}</p>' if severity else '') +
+                               f'<div class="review-copy">{blocks(body)}</div>'
+                               f'<div class="diff-comment-links"><a href="#claim-{claim["claim_id"]}">Open finding and evidence</a>'
+                               f'{original}</div></details>')
+                    annotations.setdefault(path, {}).setdefault((side, line), []).append(comment)
         for item in changes:
             path = item["path"]
             count = "Binary" if item["added"] is None else f'+{item["added"]} / −{item["removed"]}'
-            html.append(f'<details class="changed-file"><summary>{icon("file")}<code>{escape(path)}</code><span>{count}</span></summary>'
-                        f'{render_file_patch(item["patch"], path)}</details>')
+            auto_open = ' open' if len(changes) == 1 else ''
+            html.append(f'<details class="changed-file" data-file-path="{escape(path, quote=True)}"{auto_open}>'
+                        f'<summary>{icon("file")}<code>{escape(path)}</code><span>{count}</span></summary>'
+                        f'{render_file_patch(item["patch"], path, annotations.get(path))}</details>')
+        if len(changes) > 1:
+            html.append('<p class="empty" data-no-files role="status" hidden>No file paths match this filter.</p>')
         if not changes:
             html.append('<p class="empty">These commits have no file changes.</p>')
         html.append('</details>')
@@ -393,13 +420,13 @@ class ReportBuilder:
     def _findings(html: list[str], inspections: list[str], key: str, pair: dict, fixture: bool) -> None:
         provider = escape(pair["provider_id"])
         status = pair["status"]
-        count = len(pair["claims"])
         html.append(f'<article class="findings" id="pair-{pair["pair_id"]}" tabindex="-1" data-case="{escape(key, quote=True)}" '
                     f'data-provider="{provider}"><header class="review-head"><div><h3>{_reviewer_display(pair["provider_id"])}</h3>'
                     f'<p class="subtle">{escape(_case_display(pair))}</p></div>'
                     f'<span class="state {status}">{_review_status(pair)}</span></header><div class="review-meta">')
         if status == "completed":
-            html.append(f'<span>{count} captured {"comment" if count == 1 else "comments"}</span>')
+            inline_count = sum((claim.get("source_object_id") or "").startswith("inline:") for claim in pair["claims"])
+            html.append(f'<span>{inline_count} inline {"comment" if inline_count == 1 else "comments"}</span>')
         pr_url = _link(pair.get("pr_url"))
         if pr_url and not fixture:
             path = urlsplit(pair["pr_url"]).path
@@ -421,9 +448,14 @@ class ReportBuilder:
         elif not pair["claims"]:
             message = "Review completed without captured findings." if status == "completed" else "A completed review is required for scoring."
             html.append(f'<p class="empty">{message}</p>')
-        if pair["claims"]:
-            html.append('<ul class="claim-index">')
-            for claim in pair["claims"]:
+        summaries = [claim for claim in pair["claims"] if claim["decision"] == "out_of_scope"
+                     and (claim.get("source_object_id") or "").startswith("review:")]
+        findings = [claim for claim in pair["claims"] if claim not in summaries]
+        for subset, label in ((findings, "Captured findings"), (summaries, "Formal review summaries")):
+            if not subset:
+                continue
+            html.append(f'<h4 class="claim-group">{label} <span>{len(subset)}</span></h4><ul class="claim-index">')
+            for claim in subset:
                 title, severity, body = review_text(claim["body"])
                 decision = claim["decision"]
                 fallback = "Review summary" if decision == "out_of_scope" else "Reviewer comment"
@@ -437,6 +469,12 @@ class ReportBuilder:
                 html.append('</span></a></li>')
                 ReportBuilder._inspect(inspections, pair, claim, heading, severity, body, fixture)
             html.append('</ul>')
+        if conversation := [url for raw in pair.get("conversation_links", []) if (url := _link(raw))]:
+            html.append(f'<details class="review-publication"><summary>{icon("publication")}GitHub Conversation '
+                        f'<span>{len(conversation)}</span></summary><p class="subtle">Additional reviewer comments outside the scored capture.</p>')
+            for index, url in enumerate(conversation, start=1):
+                html.append(f'<p><a href="{url}">{icon("external")}Open conversation comment {index} on GitHub</a></p>')
+            html.append('</details>')
         if pair["status"] == "completed":
             matched = {claim["expected_id"] for claim in pair["claims"] if claim["decision"] == "confirmed_expected"}
             missing = [finding for finding in pair["expected"] if finding["expected_id"] not in matched]

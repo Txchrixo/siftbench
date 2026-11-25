@@ -11,7 +11,7 @@ from .github import GitHubClient, RemoteError, verify_pull
 from .grading import VerdictImporter, build_bundle, claims_for_grading
 from .manifest import ManifestLoader, canonical_json
 from .report import ReportBuilder
-from .report.context import attach_changes, attach_publications
+from .report.context import attach_changes, attach_conversations, attach_publications
 from .runner import CampaignRunner
 from .store import RunStore
 
@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--out", type=Path, required=True)
     report.add_argument("--source-repo", type=Path, help="Read full diffs from pinned commits in a local Git repository")
     report.add_argument("--publication-audit", type=Path, help="Attach verified publication evidence without changing scores")
+    report.add_argument("--github-reconciliation", type=Path, help="Link additional GitHub conversation comments without changing scores")
     report.add_argument("--finding-groups", type=Path, help="Attach manually verified groups of additional findings")
     args = parser.parse_args(argv)
     store = RunStore(args.state_dir)
@@ -165,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
                 attach_changes(bundle, args.source_repo)
             if args.publication_audit:
                 attach_publications(bundle, json.loads(args.publication_audit.read_bytes()))
+            if args.github_reconciliation:
+                attach_conversations(bundle, json.loads(args.github_reconciliation.read_bytes()))
             if args.finding_groups:
                 bundle["finding_groups"] = json.loads(args.finding_groups.read_bytes())
             builder.write(bundle, args.out)

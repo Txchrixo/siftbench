@@ -51,6 +51,16 @@ def attach_publications(bundle: dict, audit: list[dict]) -> None:
                                       "signal": entry["signal"], "summaries": summaries}
 
 
+def attach_conversations(bundle: dict, reconciliation: list[dict]) -> None:
+    sources = {(entry["provider"], entry["case"], entry["condition"], entry["pull"].lower(), entry["head"]): entry
+               for entry in reconciliation if not entry["differences"]}
+    for pair in bundle["pairs"]:
+        key = pair["provider_id"], pair["case_id"], pair["condition"], (pair.get("pr_url") or "").lower(), pair.get("head_sha")
+        if entry := sources.get(key):
+            pair["conversation_links"] = [item["url"] for item in entry["other_provider_objects"]
+                                          if item["kind"] == "issue" and item["has_body"]]
+
+
 def validate_context(bundle: dict) -> None:
     revisions = {(pair.get("base_sha"), pair.get("head_sha")) for pair in bundle["pairs"]}
     seen = set()
@@ -69,6 +79,10 @@ def validate_context(bundle: dict) -> None:
             paths.add(item["path"])
     claims = {}
     for pair in bundle["pairs"]:
+        for url in pair.get("conversation_links", []):
+            pull = re.escape(pair.get("pr_url") or "")
+            if not pull or not isinstance(url, str) or not re.fullmatch(pull + r"#issuecomment-[0-9]+", url, re.IGNORECASE):
+                raise ValueError("Conversation link must point to the same pull request")
         for claim in pair["claims"]:
             if claim["decision"] == "confirmed_novel" and claim["evidence"]:
                 claims[claim["claim_id"]] = pair["case_id"], pair["condition"], pair["repeat_index"], pair["provider_id"]

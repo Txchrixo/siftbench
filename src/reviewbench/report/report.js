@@ -10,6 +10,9 @@ const grid = document.querySelector(".comparison-grid");
 const panels = [...grid.querySelectorAll("[data-case]")];
 const contexts = [...document.querySelectorAll("[data-context-case]")];
 const issueColumns = [...document.querySelectorAll("[data-issue-provider]")];
+const diffComments = [...document.querySelectorAll("[data-diff-provider]")];
+const diffControls = [...document.querySelectorAll("[data-split-diff]")];
+const comparisonView = document.querySelector("#comparison");
 const issueScrollHints = [...document.querySelectorAll(".issue-scroll-hint")];
 const inspections = document.querySelector(".inspection-list");
 const details = [...inspections.querySelectorAll("[data-pair]")];
@@ -59,6 +62,7 @@ function showComparison(announce = false, requestedClaim = "") {
     context.hidden = context.dataset.contextCase !== cases.value || comparisonsHidden;
   }
   for (const column of issueColumns) column.hidden = !selectedReviewers.includes(column.dataset.issueProvider);
+  for (const comment of diffComments) comment.hidden = !selectedReviewers.includes(comment.dataset.diffProvider);
   for (const hint of issueScrollHints) hint.hidden = selectedReviewers.length < 3;
   grid.dataset.visible = visible.length;
   empty.hidden = visible.length > 0;
@@ -121,6 +125,26 @@ if (panels.length) {
       showComparison(true);
     });
   }
+}
+
+function setDiffView(split) {
+  comparisonView.classList.toggle("show-split", split);
+  for (const control of diffControls) control.checked = split;
+}
+for (const control of diffControls) {
+  control.closest(".diff-toolbar").hidden = false;
+  control.addEventListener("change", () => setDiffView(control.checked));
+}
+setDiffView(window.matchMedia("(min-width: 60rem)").matches);
+for (const filter of document.querySelectorAll("[data-file-filter]")) {
+  const caseFiles = filter.closest(".case-files");
+  const files = [...caseFiles.querySelectorAll("[data-file-path]")];
+  const emptyFiles = caseFiles.querySelector("[data-no-files]");
+  filter.addEventListener("input", () => {
+    const query = filter.value.trim().toLowerCase();
+    for (const file of files) file.hidden = !file.dataset.filePath.toLowerCase().includes(query);
+    emptyFiles.hidden = files.some(file => !file.hidden);
+  });
 }
 
 reviewerSelect.addEventListener("toggle", () => {

@@ -1,4 +1,4 @@
-from reviewbench.report.diff import render_diff
+from reviewbench.report.diff import render_diff, render_file_patch
 
 
 def test_diff_highlights_the_reported_head_line_and_escapes_code():
@@ -13,3 +13,17 @@ def test_diff_highlights_the_reported_head_line_and_escapes_code():
 
 def test_unrecognized_hunks_use_plain_escaped_text():
     assert render_diff("<img src=x>", "") == '<pre class="diff-raw">&lt;img src=x&gt;</pre>'
+
+
+def test_file_patch_keeps_exact_old_and_new_comment_anchors_in_both_views():
+    patch = "@@ -8 +10 @@\n-old\n+<user>\n@@ -21 +23,2 @@\n same\n+extra\n"
+    anchors = {("LEFT", "8"): ["left-comment"], ("RIGHT", "10"): ["right-comment"],
+               ("RIGHT", "24"): ["second-hunk"], ("RIGHT", "8"): ["wrong-side"]}
+    unified, split = render_file_patch(patch, "a.py", anchors).split('<div class="split-patch">')
+    for view in (unified, split):
+        assert "wrong-side" not in view
+        assert "<user>" not in view
+        assert "&lt;user&gt;" in view
+        assert view.count("left-comment") == view.count("right-comment") == view.count("second-hunk") == 1
+        assert view.index("second-hunk") > view.index("extra")
+    assert '<div class="split-row split-annotations"><div><div class="diff-annotations">left-comment</div></div>' in split
