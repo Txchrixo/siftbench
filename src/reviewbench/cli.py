@@ -4,6 +4,7 @@ import os
 import sqlite3
 import sys
 import time
+from datetime import date
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -15,14 +16,17 @@ from .github import GitHubClient, RemoteError, verify_pull
 from .grading import VerdictImporter, assessments_for_run, build_bundle, claims_for_grading
 from .manifest import ManifestLoader, canonical_json, digest
 from .report import ReportBuilder
-from .report.context import attach_changes, attach_conversations, attach_publications
+from .report.context import attach_changes, attach_conversations, attach_corpus_changes, attach_publications
 from .report.comparison import write_comparison
 from .runner import CampaignRunner
 from .store import RunStore
 
 
 def _print_json(value: object) -> None:
-    print(canonical_json(value).decode())
+    # Write UTF-8 bytes: PR titles can hold characters the console code page cannot encode (cp1252 on Windows).
+    sys.stdout.flush()
+    sys.stdout.buffer.write(canonical_json(value) + b"\n")
+    sys.stdout.buffer.flush()
 
 
 def _live_client(manifest) -> GitHubClient:
@@ -37,7 +41,16 @@ def _run_live(store: RunStore, manifest, args) -> list[dict]:
         raise ValueError("--poll-seconds must be between 1 and 60")
     if args.max_wait_seconds < 1:
         raise ValueError("--max-wait-seconds must be positive")
-    if args.max_attempts is not None and (args.max_attempts < 1 or len(manifest.pairs()) > args.max_attempts):
+    pairs = manifest.pairs()
+    selected = None
+    if args.attempts:
+        selection = json.loads(args.attempts.read_bytes())
+        if (not isinstance(selection, list) or not selection or not all(isinstance(item, str) for item in selection)
+                or len(set(selection)) != len(selection) or not set(selection) <= {pair.pair_id for pair in pairs}):
+            raise ValueError("--attempts must list unique pair IDs from this manifest")
+        selected = frozenset(selection)
+    attempt_count = len(selected) if selected is not None else len(pairs)
+    if args.max_attempts is not None and (args.max_attempts < 1 or attempt_count > args.max_attempts):
         raise ValueError("The planned attempt count exceeds --max-attempts, or the limit is invalid")
     if args.max_active_per_reviewer < 1:
         raise ValueError("--max-active-per-reviewer must be positive")
@@ -45,9 +58,10 @@ def _run_live(store: RunStore, manifest, args) -> list[dict]:
     runner = CampaignRunner(store, _live_client(manifest), execution_mode="github", max_active_per_reviewer=args.max_active_per_reviewer)
     active = {"planned", "preparing", "awaiting_review"}
     while True:
-        rows = runner.step(manifest)
+        rows = runner.step(manifest, selected)
         remaining = deadline - time.monotonic()
-        if args.once or remaining <= 0 or not any(row["status"] in active for row in rows):
+        relevant = rows if selected is None else [row for row in rows if row["pair_id"] in selected]
+        if args.once or remaining <= 0 or not any(row["status"] in active for row in relevant):
             return rows
         time.sleep(min(args.poll_seconds, remaining))
 
@@ -92,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         if name == "doctor":
             command.add_argument("--github", action="store_true", help="Check authorized private repositories and pinned commits")
             command.add_argument("--pilot-bundle", type=Path, help="Verify prior provider publications with their pinned manifest and GitHub")
+        else:
+            command.add_argument("--limits", type=Path, help="Operator-supplied quotas and per-review costs")
+            command.add_argument("--max-active-per-reviewer", type=int, default=4)
     run = commands.add_parser("run")
     run.add_argument("--manifest", type=Path, required=True)
     run.add_argument("--run-id")
@@ -106,7 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         live_command.add_argument("--poll-seconds", type=int, default=5)
         live_command.add_argument("--max-wait-seconds", type=int, default=3600, help="Return resumable state after this polling budget")
         live_command.add_argument("--max-active-per-reviewer", type=int, default=4, help="Limit simultaneous attempts for each reviewer")
-        live_command.add_argument("--max-attempts", type=int, help="Refuse the campaign if its planned total exceeds this count")
+        live_command.add_argument("--max-attempts", type=int, help="Refuse to start if the selected attempt count exceeds this limit")
+        live_command.add_argument("--attempts", type=Path, help="JSON array of explicit pair IDs from plan")
     status = commands.add_parser("status")
     status.add_argument("--run-id", required=True)
     status.add_argument("--events", action="store_true", help="Include the ordered attempt event log in the private output")
@@ -141,12 +159,15 @@ def main(argv: list[str] | None = None) -> int:
     report_source.add_argument("--run-id")
     report_source.add_argument("--bundle", type=Path)
     report.add_argument("--out", type=Path, required=True)
-    report.add_argument("--source-repo", type=Path, help="Read full diffs from pinned commits in a local Git repository")
+    report_sources = report.add_mutually_exclusive_group()
+    report_sources.add_argument("--source-repo", type=Path, help="Read full diffs from pinned commits in a local Git repository")
+    report_sources.add_argument("--sources", type=Path, help="Read full diffs from all local corpus clones")
     report.add_argument("--publication-audit", type=Path, help="Attach verified publication evidence without changing scores")
     report.add_argument("--github-reconciliation", type=Path, help="Link additional GitHub conversation comments without changing scores")
     report.add_argument("--finding-groups", type=Path, help="Attach manually verified groups of additional findings")
     report.add_argument("--costs", type=Path, help="Attach observed cost evidence keyed by attempt ID")
     report.add_argument("--agreement", type=Path, help="Attach an annotator agreement summary from grade agree")
+    report.add_argument("--methodology", type=Path, help="Attach an operator-approved plain text methodology note")
     extension = commands.add_parser("extend-report", help="Add a distinct reviewer campaign to an existing report on identical inputs")
     extension.add_argument("--baseline", type=Path, required=True)
     extension.add_argument("--baseline-manifest", type=Path, required=True)
@@ -177,7 +198,25 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--targets", type=Path, required=True)
     prepare.add_argument("--run-id", required=True)
     prepare.add_argument("--repeats", type=int, default=1)
+    prepare.add_argument("--review-inputs", type=Path, help="Prepared review revisions from prepare-repos")
     prepare.add_argument("--out", type=Path, required=True)
+    discover = commands.add_parser("discover-cases", help="Screen real PR metadata against local Git clones")
+    discover.add_argument("--sources", type=Path, required=True)
+    discover.add_argument("--out", type=Path, required=True)
+    for name, default in (("target", 45), ("min-languages", 5), ("project-cap", 4), ("min-files", 1),
+                          ("max-files", 10), ("min-lines", 20), ("max-lines", 400)):
+        discover.add_argument(f"--{name}", type=int, default=default)
+    discover.add_argument("--prefer-after", type=date.fromisoformat)
+    draft = commands.add_parser("draft-rubric", help="Prepare local correction evidence for human approval")
+    repos = commands.add_parser("prepare-repos", help="Build local Git repositories and pin a manifest without pushing")
+    for command in (draft, repos):
+        command.add_argument("--sources", type=Path, required=True)
+        command.add_argument("--catalog", type=Path, required=True)
+        command.add_argument("--out", type=Path, required=True)
+    repos.add_argument("--rubric", type=Path, required=True)
+    repos.add_argument("--targets", type=Path, required=True)
+    repos.add_argument("--run-id", required=True)
+    repos.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args(argv)
     store = RunStore(args.state_dir)
     try:
@@ -190,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                 client = _live_client(manifest)
                 checked = set()
                 for pair in manifest.pairs():
-                    key = pair.target.repository, pair.variant.input_digest
+                    key = pair.target.repository, pair.variant.input_digest, pair.head_sha
                     if key not in checked:
                         client.check_input(pair)
                         checked.add(key)
@@ -206,19 +245,25 @@ def main(argv: list[str] | None = None) -> int:
                                         "publication_evidence": "verified" if (target.provider_id, target.condition, target.isolation_group) in witnessed else "unverified"}
                                        for target in manifest.targets]})
         elif args.command == "plan":
+            from .planning import estimate
+
             manifest = ManifestLoader.load(args.manifest)
+            limits = json.loads(args.limits.read_bytes()) if args.limits else {}
             _print_json({"run_id": manifest.run_id, "manifest_digest": manifest.manifest_digest, "pairs": [
                 {"pair_id": pair.pair_id, "case_id": pair.variant.case_id, "condition": pair.variant.condition,
-                 "base_sha": pair.variant.base_sha, "head_sha": pair.variant.head_sha,
+                 "title": (pair.variant.provenance or {}).get("title", pair.variant.title),
+                 "base_sha": pair.variant.base_sha, "head_sha": pair.head_sha,
                  "repository": pair.target.repository, "provider_id": pair.target.provider_id,
                  "trigger": pair.target.trigger, "repeat_index": pair.repeat_index, "isolation_group": pair.target.isolation_group}
                 for pair in manifest.pairs()
-            ]})
+            ], "estimates": estimate(manifest, limits, args.max_active_per_reviewer)})
         elif args.command == "run":
             manifest = ManifestLoader.load(args.manifest)
             if args.run_id is not None and args.run_id != manifest.run_id:
                 raise ValueError("--run-id does not match the pinned manifest")
             if args.fixture:
+                if args.attempts:
+                    raise ValueError("--attempts is only supported for live execution")
                 if manifest.settling_seconds:
                     raise ValueError("Local fixtures require settling_seconds=0")
                 _print_json(CampaignRunner(store, FixtureTransport.load(args.fixture)).step(manifest))
@@ -268,6 +313,10 @@ def main(argv: list[str] | None = None) -> int:
             bundle = builder.load_bundle(args.bundle) if args.bundle else build_bundle(store, args.run_id)
             if args.source_repo:
                 attach_changes(bundle, args.source_repo)
+            if args.sources:
+                from .discovery import load_sources
+
+                attach_corpus_changes(bundle, load_sources(json.loads(args.sources.read_bytes()), args.sources.parent))
             if args.publication_audit:
                 attach_publications(bundle, json.loads(args.publication_audit.read_bytes()))
             if args.github_reconciliation:
@@ -278,6 +327,11 @@ def main(argv: list[str] | None = None) -> int:
                 attach_costs(bundle, json.loads(args.costs.read_bytes()))
             if args.agreement:
                 bundle["annotation_agreement"] = json.loads(args.agreement.read_bytes())
+            if args.methodology:
+                note = args.methodology.read_text(encoding="utf-8").strip()
+                if not note or len(note) > 4000:
+                    raise ValueError("Methodology note must be 1 to 4000 characters")
+                bundle["analysis"] = note
             builder.write(bundle, args.out)
         elif args.command == "extend-report":
             from .analysis import extend_campaign
@@ -316,13 +370,40 @@ def main(argv: list[str] | None = None) -> int:
             if args.out.suffix.lower() != ".json":
                 raise ValueError("Prepared corpus manifest must have a .json extension")
             manifest = prepare_corpus(json.loads(args.catalog.read_bytes()), json.loads(args.targets.read_bytes()),
-                                      args.rubric.read_bytes(), args.run_id, args.repeats)
+                                      args.rubric.read_bytes(), args.run_id, args.repeats,
+                                      json.loads(args.review_inputs.read_bytes()) if args.review_inputs else None)
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_bytes(manifest.json + b"\n")
+        elif args.command == "discover-cases":
+            from .discovery import discover
+
+            catalog, notes = discover(json.loads(args.sources.read_bytes()), args.sources.parent,
+                                      target=args.target, min_languages=args.min_languages, project_cap=args.project_cap,
+                                      min_files=args.min_files, max_files=args.max_files, min_lines=args.min_lines,
+                                      max_lines=args.max_lines, after=args.prefer_after)
+            _write_json(args.out / "catalog.json", catalog)
+            (args.out / "candidates-report.md").write_text(notes, encoding="utf-8")
+            _print_json({"selected": len(catalog["cases"]), **catalog["selection"]})
+        elif args.command == "draft-rubric":
+            from .preparation import draft_rubric
+
+            _write_json(args.out, draft_rubric(json.loads(args.catalog.read_bytes()), json.loads(args.sources.read_bytes()),
+                                               args.sources.parent))
+        elif args.command == "prepare-repos":
+            from .preparation import prepare_repos
+
+            _print_json(prepare_repos(json.loads(args.catalog.read_bytes()), json.loads(args.targets.read_bytes()),
+                                      args.rubric.read_bytes(), json.loads(args.sources.read_bytes()), args.sources.parent,
+                                      args.out, run_id=args.run_id, repeats=args.repeats))
         else:
             parser.print_help()
     except (ValueError, OSError, sqlite3.Error, RemoteError) as error:
         print(f"reviewbench: {error}", file=sys.stderr)
+        return 1
+    except (KeyError, TypeError) as error:
+        # Operator-supplied JSON files are parsed loosely; report the malformed field instead of a traceback.
+        detail = f"missing field {error}" if isinstance(error, KeyError) else str(error)
+        print(f"reviewbench: invalid input file ({detail})", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("reviewbench: interrupted; use status or resume to continue", file=sys.stderr)

@@ -18,7 +18,7 @@ class CampaignRunner:
         self.max_active_per_reviewer = max_active_per_reviewer
         self.collector = ReviewCollector(store, transport)
 
-    def step(self, manifest: Manifest) -> list[dict]:
+    def step(self, manifest: Manifest, selected: frozenset[str] | None = None) -> list[dict]:
         with self.store.lock(manifest.run_id):
             self.store.register(manifest, self.execution_mode)
             paused_until = self.store.rate_limit_until(manifest.run_id)
@@ -26,6 +26,8 @@ class CampaignRunner:
             planned = {row["pair_id"] for row in states if row["status"] == "planned"}
             active = Counter(row["provider_id"] for row in states if row["status"] in {"preparing", "awaiting_trigger", "awaiting_review"})
             for pair in manifest.pairs():
+                if selected is not None and pair.pair_id not in selected:
+                    continue
                 if self.max_active_per_reviewer and pair.pair_id in planned:
                     provider = pair.target.provider_id
                     if active[provider] >= self.max_active_per_reviewer:

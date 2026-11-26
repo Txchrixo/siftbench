@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from ..manifest import digest
+from ..discovery import source_repo
 
 
 def attach_changes(bundle: dict, repository: Path) -> None:
@@ -35,6 +36,32 @@ def attach_changes(bundle: dict, repository: Path) -> None:
     bundle["changes"] = changes
 
 
+def attach_corpus_changes(bundle: dict, sources: dict) -> None:
+    """Read each original diff once and associate it with all matching review commits."""
+    by_repository, revisions = {}, {}
+    for pair in bundle["pairs"]:
+        source = pair.get("source")
+        if not source:
+            raise ValueError("Result bundle is missing corpus provenance")
+        repository = source_repo(source)
+        if repository not in sources:
+            raise ValueError(f"Missing local source clone for {repository}")
+        original = source["base_sha"], source["head_sha"]
+        replay = pair["base_sha"], pair["head_sha"]
+        link = repository, *original
+        if revisions.setdefault(replay, link) != link:
+            raise ValueError("Conflicting source provenance for a review revision")
+        by_repository.setdefault(repository, set()).add(original)
+    files = {}
+    for repository, commits in by_repository.items():
+        original_bundle = {"pairs": [{"base_sha": base, "head_sha": head} for base, head in commits]}
+        attach_changes(original_bundle, sources[repository][0])
+        for change in original_bundle["changes"]:
+            files[repository, change["base_sha"], change["head_sha"]] = change["files"]
+    bundle["changes"] = [{"base_sha": base, "head_sha": head, "files": files[original]}
+                         for (base, head), original in sorted(revisions.items())]
+
+
 def attach_publications(bundle: dict, audit: list[dict]) -> None:
     pairs = {(p["provider_id"], p["case_id"], p["condition"], (p.get("pr_url") or "").lower(), p.get("head_sha")): p
              for p in bundle["pairs"]}
@@ -42,6 +69,9 @@ def attach_publications(bundle: dict, audit: list[dict]) -> None:
         key = (entry["provider"], entry["case"], entry["condition"], entry["pull"].lower(), entry["head"])
         if key not in pairs:
             raise ValueError("Publication audit does not match a pinned review attempt")
+        if "summaries" not in entry:
+            raise ValueError("Publication audit entry has no check summaries. "
+                             "Pass `reviewbench audit` output with --github-reconciliation instead")
         summaries = []
         for summary in entry["summaries"]:
             if digest(summary["body"].encode()) != summary["body_digest"]:
