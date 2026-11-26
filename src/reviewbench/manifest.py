@@ -81,12 +81,13 @@ class CaseVariant:
     base_sha: str
     head_sha: str
     isolation_group: str | None = None
+    repeat_heads: tuple[str, ...] = ()
+    provenance: dict | None = None
 
     @property
     def input_digest(self) -> str:
         data = asdict(self)
-        if data["isolation_group"] is None:
-            del data["isolation_group"]
+        _omit_case_defaults(data)
         return digest(canonical_json(data))
 
 
@@ -111,6 +112,16 @@ class ExperimentPair:
     target: Target
     repeat_index: int
 
+    @property
+    def head_sha(self) -> str:
+        return self.variant.repeat_heads[self.repeat_index] if self.variant.repeat_heads else self.variant.head_sha
+
+
+def _omit_case_defaults(data: dict) -> None:
+    for key in ("isolation_group", "repeat_heads", "provenance"):
+        if not data[key]:
+            del data[key]
+
 
 @dataclass(frozen=True)
 class Manifest:
@@ -127,8 +138,7 @@ class Manifest:
     def json(self) -> bytes:
         data = asdict(self)
         for case in data["cases"]:
-            if case["isolation_group"] is None:
-                del case["isolation_group"]
+            _omit_case_defaults(case)
         for target in data["targets"]:
             for optional in ("completion_policy", "vendor_version", "isolation_group"):
                 if target[optional] is None:
@@ -185,14 +195,18 @@ class ManifestLoader:
             raise ManifestError("Target repository is outside the allowlist")
         if {(case.condition, case.isolation_group) for case in cases} != {(target.condition, target.isolation_group) for target in targets}:
             raise ManifestError("Each condition and isolation group requires cases and targets")
+        repeats = _integer(data.get("repeats", 1), "repeats", 1, 100)
+        if any(case.repeat_heads and len(case.repeat_heads) != repeats for case in cases):
+            raise ManifestError("Each prepared case requires one pinned head per repeat")
         return Manifest(
             identifier(data["run_id"], "run_id"), allowed, _pattern(data["rubric_digest"], _DIGEST, "rubric_digest"),
-            timeout, settling, _integer(data.get("repeats", 1), "repeats", 1, 100), cases, targets,
+            timeout, settling, repeats, cases, targets,
         )
 
 
 def _case(data: Any) -> CaseVariant:
-    _fields(data, {"case_id", "condition", "title", "body", "base_ref", "base_sha", "head_sha"}, {"isolation_group"})
+    _fields(data, {"case_id", "condition", "title", "body", "base_ref", "base_sha", "head_sha"},
+            {"isolation_group", "repeat_heads", "provenance"})
     base = _pattern(data["base_sha"], _SHA, "base_sha")
     head = _pattern(data["head_sha"], _SHA, "head_sha")
     if base == head:
@@ -200,9 +214,26 @@ def _case(data: Any) -> CaseVariant:
     title = _text(data["title"], "PR title", 256)
     if "\r" in title or "\n" in title:
         raise ManifestError("PR title must fit on one line")
+    heads = data.get("repeat_heads", [])
+    if not isinstance(heads, list):
+        raise ManifestError("Expected an array of pinned repeat heads")
+    heads = tuple(_pattern(sha, _SHA, "repeat head") for sha in heads)
+    if heads and (heads[0] != head or base in heads or len(set(heads)) != len(heads)):
+        raise ManifestError("Repeat heads must be distinct and begin with the pinned head")
+    provenance = data.get("provenance")
+    if provenance is not None:
+        _fields(provenance, {"source_pr", "base_sha", "head_sha", "title", "language", "date", "license", "license_url",
+                             "reference_count"})
+        for key, value in provenance.items():
+            if key != "reference_count":
+                _text(value, f"source {key}", 1024)
+        _integer(provenance["reference_count"], "reference_count", 0, 1000)
+        for key in ("base_sha", "head_sha"):
+            _pattern(provenance[key], _SHA, f"source {key}")
     return CaseVariant(identifier(data["case_id"], "case_id"), identifier(data["condition"], "condition"),
                        title, _text(data["body"], "PR body", 60000), _ref(data["base_ref"]), base, head,
-                       identifier(data["isolation_group"], "isolation_group") if "isolation_group" in data else None)
+                       identifier(data["isolation_group"], "isolation_group") if "isolation_group" in data else None,
+                       heads, provenance)
 
 
 def _target(data: Any) -> Target:

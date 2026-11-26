@@ -26,7 +26,7 @@ class FixtureTransport:
         repository = pair.target.repository
         number = int(pair.pair_id[:12], 16) + 1
         pr = PullRequest(number, f"https://github.com/{repository}/pull/{number}", repository,
-                         pair.variant.base_ref, head_ref, pair.variant.base_sha, pair.variant.head_sha)
+                         pair.variant.base_ref, head_ref, pair.variant.base_sha, pair.head_sha)
         self.pulls[(repository, head_ref)] = pr
         return pr
 

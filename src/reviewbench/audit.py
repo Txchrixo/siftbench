@@ -43,7 +43,7 @@ def audit_campaign(bundle: dict, manifest: Manifest, client: GitHubClient) -> li
                 result["availability"] = "different"
                 result["differences"].append("Current PR base or head differs from the frozen revision")
                 continue
-            if pr.title is not None and pr.title != pair.get("case_title", pr.title):
+            if pr.title is not None and pr.title != pair.get("review_title", pair.get("case_title", pr.title)):
                 result["differences"].append("Current PR title differs from the archived title")
             if target.publisher == "coderabbitai[bot]" and target.completion_check == "CodeRabbit":
                 case = cases.get((pair["case_id"], pair["condition"]))

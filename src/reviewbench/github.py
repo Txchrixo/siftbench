@@ -65,7 +65,7 @@ class Transport(Protocol):
 def verify_pull(pair: ExperimentPair, pr: PullRequest, head_ref: str) -> None:
     case = pair.variant
     if (pr.repository, pr.base_ref, pr.head_ref, pr.base_sha, pr.head_sha) != (
-        pair.target.repository, case.base_ref, head_ref, case.base_sha, case.head_sha
+        pair.target.repository, case.base_ref, head_ref, case.base_sha, pair.head_sha
     ):
         raise InvalidInput("Pull request does not match the pinned repository, refs, and SHAs")
     if pr.title is not None and pr.title != case.title or pr.body is not None and pr.body != case.body:
@@ -231,10 +231,10 @@ class GitHubClient:
         if self._branch_sha(path, case.base_ref) != case.base_sha:
             raise InvalidInput("Base branch no longer points at the pinned SHA")
         try:
-            head, _ = self._request("GET", f"{path}/git/commits/{case.head_sha}")
+            head, _ = self._request("GET", f"{path}/git/commits/{pair.head_sha}")
         except NotFound as error:
             raise InvalidInput("Pinned head is missing from the test repository. Import the pilot commit first.") from error
-        if not isinstance(head, dict) or head.get("sha") != case.head_sha:
+        if not isinstance(head, dict) or head.get("sha") != pair.head_sha:
             raise InvalidInput("Head commit response does not match the pinned SHA")
         return path
 
@@ -244,12 +244,12 @@ class GitHubClient:
         try:
             current = self._branch_sha(path, head_ref)
         except NotFound:
-            data, _ = self._request("POST", path + "/git/refs", body={"ref": f"refs/heads/{head_ref}", "sha": case.head_sha})
+            data, _ = self._request("POST", path + "/git/refs", body={"ref": f"refs/heads/{head_ref}", "sha": pair.head_sha})
             try:
                 current = data["object"]["sha"]
             except (KeyError, TypeError) as error:
                 raise RemoteError("Could not verify the new head branch") from error
-        if current != case.head_sha or self._branch_sha(path, case.base_ref) != case.base_sha:
+        if current != pair.head_sha or self._branch_sha(path, case.base_ref) != case.base_sha:
             raise InvalidInput("Branch revisions changed before creating the PR")
         data, _ = self._request("POST", path + "/pulls", body={"title": case.title, "body": case.body,
                                                               "base": case.base_ref, "head": head_ref, "draft": False})
