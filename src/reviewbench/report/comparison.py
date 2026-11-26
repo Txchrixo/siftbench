@@ -84,22 +84,27 @@ def _latency(stats: dict) -> _Reading | None:
                     f'<span class="reading-facts">{"".join(facts)}</span>', note)
 
 
-def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False, metric: str = "") -> _Reading | None:
+def _fraction(numerator: int, denominator: int, unit: str, *, percent: bool = False, metric: str = "",
+              bounds: tuple[int, int] | None | bool = True) -> _Reading | None:
     if not denominator:
         return None
     count = f"{numerator} / {denominator}"
     if not percent:
         return _Reading(count, unit)
-    return _Reading(f"{numerator / denominator:.0%}", count, _range_bar(numerator, denominator, metric=metric),
-                    percent_interval(numerator, denominator) or "")
+    note = percent_interval(numerator, denominator) if bounds is True else (
+        f"95% CI {bounds[0]}-{bounds[1]}%" if bounds else None)
+    return _Reading(f"{numerator / denominator:.0%}", count,
+                    _range_bar(numerator, denominator, metric=metric, bounds=bounds), note or "")
 
 
-def _values(metrics: dict, *, paired: bool = False) -> tuple:
+def _values(metrics: dict, *, paired: bool = False, intervals: dict | None = None) -> tuple:
     severe = metrics["high_severity"]
     costs = tuple(_Reading(f'{currency} {stats["p50"]:g}', f'Median of {_plural(stats["n"], "attempt")}')
                   for currency, stats in metrics["observed_cost_minor"].items())
-    precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True, metric="Precision")
-    recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True, metric="Reference recall")
+    precision = _fraction(metrics["matched"] + metrics["novel"], metrics["adjudicated"], "", percent=True, metric="Precision",
+                          bounds=True if intervals is None else intervals.get("precision"))
+    recall = _fraction(metrics["matched"], metrics["expected"], "", percent=True, metric="Reference recall",
+                       bounds=True if intervals is None else intervals.get("reference_recall"))
     grading_pending = any(metrics["verdict_counts"].get(key) for key in ("ungraded", "unresolved"))
     if not metrics["completed"]:
         precision = recall = _MetricState("No matched reviews" if paired else "No completed reviews")
@@ -201,13 +206,26 @@ def operational_metrics(bundle: dict) -> str:
     headers = [(row["reviewer"], f'{row["operations"]["completed"]}/{row["operations"]["planned"]} completed')
                for row in reviewers]
     values = [_values(row["operations"]) for row in reviewers]
+    repeated = metrics["scoring_policy_version"] == 2
     html = ['<section id="operational-metrics" class="analysis-section" aria-labelledby="operations-heading">'
             '<div class="analysis-heading"><h2 id="operations-heading">Operational metrics</h2>'
             f'<p class="subtle">Review quality, timing and measured costs across all attempts, including repeats.{info("interval")}</p></div>',
             _matrix(headers, values, operational=True), publication_latency(bundle)]
+    if repeated:
+        outcomes = [(_reviewer_display(row["reviewer"]), str(row["operations"]["completed"]),
+                     str(row["operations"]["status_counts"].get("timed_out", 0)),
+                     str(sum(row["operations"]["status_counts"].get(state, 0)
+                             for state in ("quota", "invalid_input", "failed", "needs_attention"))),
+                     str(row["operations"]["grading_incomplete_attempts"]))
+                    for row in reviewers]
+        html.append('<details class="analysis-disclosure" open><summary>Attempt outcomes</summary>'
+                    + _table("Attempt outcomes", ("Reviewer", "Completed", "Timed out", "Failed or needs attention",
+                                                  "Grading incomplete"), outcomes) + "</details>")
     repeats = [(_reviewer_display(row["reviewer"]), str(repeat["repeat_index"] + 1),
                 f'{repeat["completed"]} / {repeat["planned"]}',
-                _with_interval(_ratio(repeat["matched"], repeat["expected"], empty="No completed reviews" if not repeat["completed"] else "No reference findings")))
+                _with_interval(_ratio(repeat["matched"], repeat["expected"],
+                                      empty="No completed reviews" if not repeat["completed"] else "No reference findings"),
+                               bounds=not repeated))
                for row in reviewers if len(row["repeats"]) > 1 for repeat in row["repeats"]]
     if repeats:
         html.append('<details class="analysis-disclosure"><summary>Results by repetition</summary>'
@@ -225,10 +243,11 @@ def _pairwise_scores(pairs: list[dict]) -> str:
             '<th scope="col">Reference recall</th></tr></thead>']
     for pair in pairs:
         html.append(f'<tbody><tr class="pairwise-scope"><th scope="rowgroup" colspan="3">'
-                    f'<strong>{pair["completed_in_both"]} / {pair["planned_in_both"]}</strong>'
-                    ' <span>matched samples</span></th></tr>')
+                    f'<strong>{pair.get("graded_in_both", pair["completed_in_both"])} / {pair["planned_in_both"]}</strong>'
+                    f' <span>{"matched, graded samples" if "graded_in_both" in pair else "matched samples"}</span></th></tr>')
         for peer in pair["reviewers"]:
-            precision, recall, *_ = _values(peer["metrics"], paired=True)
+            precision, recall, *_ = _values(peer["metrics"], paired=True,
+                                            intervals={} if "graded_in_both" in pair else None)
             html.append(f'<tr><th scope="row">{_reviewer_display(peer["reviewer"])}</th>'
                         f'<td>{_value(precision, "Precision")}</td>'
                         f'<td>{_value(recall, "Reference recall")}</td></tr>')
@@ -337,12 +356,17 @@ def write_comparison(result: dict, out: Path) -> None:
         done, planned = sum(row["completed"] for row in coverage), sum(row["planned"] for row in coverage)
         html.append(f'<div><dt>{side.capitalize()}</dt><dd><code>{escape(result[f"{side}_run"])}</code>'
                     f'<span class="campaign-total"><strong>{done} / {planned}</strong> completed in shared scope</span></dd></div>')
+    repeated = result["scoring_policy_version"] == 2
+    explanation = ("Metrics use passages completed and fully graded in both campaigns. Intervals resample whole PRs."
+                   if repeated else "Each reviewer is compared on the same pull requests and repetitions completed in both campaigns.")
     html.append('</dl><section id="matched-metrics" class="analysis-section" aria-labelledby="matched-metrics-title">'
                 '<div class="analysis-heading"><h2 id="matched-metrics-title">Matched metrics</h2>'
-                '<p class="subtle">Each reviewer is compared on the same pull requests and repetitions completed in both campaigns.</p></div>')
+                f'<p class="subtle">{explanation}</p></div>')
     reviewers = result["reviewers"]
-    headers = [(row["reviewer"], f'{row["completed_in_both"]} / {row["planned_in_both"]} matched completions') for row in reviewers]
-    values = [tuple(zip(_values(row["before"], paired=True), _values(row["after"], paired=True), strict=True))
+    headers = [(row["reviewer"], f'{row["graded_in_both"]} / {row["planned_in_both"]} matched and graded' if repeated
+                else f'{row["completed_in_both"]} / {row["planned_in_both"]} matched completions') for row in reviewers]
+    values = [tuple(zip(*(_values(row[side], paired=True, intervals=row["score_intervals"].get(side, {}) if repeated else None)
+                          for side in ("before", "after")), strict=True))
               for row in reviewers]
     html.extend((_matrix(headers, values, paired=True), "</section>", _coverage(result), _settings(result),
                  f'</main>{_footer(navigation=False)}',

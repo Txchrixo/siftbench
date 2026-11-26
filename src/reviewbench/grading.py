@@ -5,12 +5,19 @@ from pathlib import Path
 from .manifest import canonical_json, digest, identifier
 from .providers import _timestamp
 from .store import RunStore, StoreError
+from .stats import clustered_ratio_intervals
 
 
 DECISIONS = frozenset({"confirmed_expected", "confirmed_novel", "false_positive", "justified_context_request",
                        "duplicate", "out_of_scope", "unresolved"})
 EVIDENCE_TYPES = frozenset({"code", "test", "case_snapshot", "aws_live"})
 SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+
+
+def fully_graded(pair: dict) -> bool:
+    return pair.get("rubric_ready", True) and all(
+        claim["decision"] not in {None, "unresolved"} for claim in pair["claims"]
+    )
 
 
 def _require_text(value, label: str) -> str:
@@ -158,7 +165,7 @@ def assessments_for_run(store: RunStore, run_id: str) -> list[dict]:
 def build_bundle(store: RunStore, run_id: str) -> dict:
     manifest = store.load_manifest(run_id)
     pairs = store.statuses(run_id)
-    variants = {pair.pair_id: pair.variant for pair in manifest.pairs()}
+    inputs = {pair.pair_id: pair for pair in manifest.pairs()}
     with store.connect() as db:
         mode = db.execute("SELECT execution_mode FROM campaign WHERE run_id = ?", (run_id,)).fetchone()[0]
         attempts = {row["attempt_id"]: row for row in db.execute("""
@@ -166,9 +173,14 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
             FROM attempt a JOIN experiment_pair p USING (pair_id) WHERE p.run_id = ?
         """, (run_id,))}
         for pair in pairs:
-            variant = variants[pair["pair_id"]]
-            pair["base_sha"], pair["head_sha"] = variant.base_sha, variant.head_sha
+            pinned = inputs[pair["pair_id"]]
+            variant = pinned.variant
+            pair["base_sha"], pair["head_sha"] = variant.base_sha, pinned.head_sha
             pair["case_title"] = variant.title
+            if variant.provenance:
+                pair["case_title"] = variant.provenance["title"]
+                pair["review_title"] = variant.title
+                pair["source"] = variant.provenance
             pair["input_digest"] = variant.input_digest
             if variant.isolation_group is not None:
                 pair["isolation_group"] = variant.isolation_group
@@ -181,12 +193,14 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
             for finding in pair["expected"]:
                 if finding["severity"] is None:
                     del finding["severity"]
+            if variant.provenance:
+                pair["rubric_ready"] = len(pair["expected"]) == variant.provenance["reference_count"]
             capture = db.execute("SELECT * FROM review_capture WHERE attempt_id = ?", (pair["attempt_id"],)).fetchone()
             pair["claims"] = []
             pair["capture_signal"] = capture["completion_signal"] if capture else None
             if not capture:
                 continue
-            if capture["observed_head_sha"] != variant.head_sha:
+            if capture["observed_head_sha"] != pinned.head_sha:
                 raise StoreError("Review capture does not match the pinned commit")
             raw = json.loads(store.read_artifact(capture["raw_artifact_id"]))
             pair["timing"]["frozen_at"] = capture["frozen_at"]
@@ -216,7 +230,7 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
                 source = inline.get(claim["source_object_id"], {})
                 hunk = source.get("diff_hunk")
                 if (isinstance(hunk, str) and 0 < len(hunk) <= 16_384
-                        and source.get("commit_id") == variant.head_sha
+                        and source.get("commit_id") == pinned.head_sha
                         and source.get("html_url") == claim["source_url"]):
                     claim["diff_hunk"] = hunk
                     if source.get("side") in ("LEFT", "RIGHT"):
@@ -229,6 +243,7 @@ def build_bundle(store: RunStore, run_id: str) -> dict:
                                       "text": store.read_artifact(piece["artifact_id"]).decode()} for piece in evidence]
                 pair["claims"].append(claim)
     return {"schema_version": 1, "operational_schema_version": 1, "run_id": run_id, "manifest_digest": manifest.manifest_digest,
+            **({"scoring_policy_version": 2} if any(case.provenance for case in manifest.cases) else {}),
             "rubric_digest": manifest.rubric_digest, "fixture": mode == "fixture",
             "reviewer_configuration": [{"provider": t.provider_id, "condition": t.condition, "publisher": t.publisher, "isolation_group": t.isolation_group,
                                         "trigger": t.trigger, "check": t.completion_check,
@@ -241,23 +256,34 @@ class ScoreCalculator:
     def calculate(bundle: dict) -> dict:
         pairs = bundle["pairs"]
         providers = sorted({pair["provider_id"] for pair in pairs})
+        repeated = bundle.get("scoring_policy_version") == 2
         completed = {
-            provider: {(pair["case_id"], pair["condition"]): pair for pair in pairs
-                       if pair["provider_id"] == provider and pair["status"] == "completed" and pair["repeat_index"] == 0}
+            provider: {(pair["case_id"], pair["condition"], pair["repeat_index"]): pair for pair in pairs
+                       if pair["provider_id"] == provider and pair["status"] == "completed"
+                       and (pair["repeat_index"] == 0 or repeated)
+                       and (not repeated or fully_graded(pair))}
             for provider in providers
         }
-        shared = sorted(set.intersection(*(set(value) for value in completed.values())) if providers else set())
-        scores = {}
+        samples = sorted(set.intersection(*(set(value) for value in completed.values())) if providers else set())
+        shared = sorted({key[:2] for key in samples})
+        scores, clusters = {}, {}
         for provider in providers:
             expected_count = matched = novel = false_positives = justified = duplicate = unresolved = ungraded = 0
-            for key in shared:
+            for key in samples:
                 pair = completed[provider][key]
                 expected = {finding["expected_id"] for finding in pair["expected"]}
                 claims = pair["claims"]
+                hits = len({claim["expected_id"] for claim in claims if claim["decision"] == "confirmed_expected"} & expected)
+                extra = sum(claim["decision"] == "confirmed_novel" for claim in claims)
+                false = sum(claim["decision"] == "false_positive" for claim in claims)
                 expected_count += len(expected)
-                matched += len({claim["expected_id"] for claim in claims if claim["decision"] == "confirmed_expected"} & expected)
-                novel += sum(claim["decision"] == "confirmed_novel" for claim in claims)
-                false_positives += sum(claim["decision"] == "false_positive" for claim in claims)
+                matched += hits
+                novel += extra
+                false_positives += false
+                if repeated:
+                    counts = clusters.setdefault(key[0], {}).setdefault(provider, [0, 0, 0, 0])
+                    for index, count in enumerate((hits + extra, hits + extra + false, hits, len(expected))):
+                        counts[index] += count
                 justified += sum(claim["decision"] == "justified_context_request" for claim in claims)
                 duplicate += sum(claim["decision"] == "duplicate" for claim in claims)
                 unresolved += sum(claim["decision"] == "unresolved" for claim in claims)
@@ -266,4 +292,7 @@ class ScoreCalculator:
                                 "false_positives": false_positives, "justified_context_requests": justified,
                                 "duplicates": duplicate, "unresolved": unresolved, "ungraded": ungraded,
                                 "adjudicated": matched + novel + false_positives}
+        if repeated:
+            return {"shared": shared, "shared_samples": samples, "providers": scores, "scored_prs": len(clusters),
+                    "intervals": clustered_ratio_intervals(clusters, providers)}
         return {"shared": shared, "providers": scores}

@@ -42,3 +42,28 @@ def percent_interval(successes: int, total: int) -> str | None:
         return None
     low, high = (round(value * 100) for value in interval)
     return f"95% CI {low}-{high}%"
+
+
+def clustered_ratio_intervals(clusters: dict, providers: list[str], *, resamples: int = 2000) -> dict:
+    """Resample whole PRs, with identical PR draws for each reviewer."""
+    values = {provider: [[], []] for provider in providers}
+    rows = [clusters[key] for key in sorted(clusters)]
+    rng = Random(0)
+    if len(rows) >= _MIN_BOOTSTRAP:
+        for _ in range(resamples):
+            sample = rng.choices(rows, k=len(rows))
+            for provider in providers:
+                totals = list(map(sum, zip(*(row[provider] for row in sample), strict=True)))
+                for index, (hit, total) in enumerate(zip(totals[::2], totals[1::2], strict=True)):
+                    if total:
+                        values[provider][index].append(hit / total)
+
+    def bounds(series: list[float]) -> tuple[int, int] | None:
+        if len(series) < resamples * .95 or min(series) == max(series):
+            return None
+        series.sort()
+        tail = int(.025 * len(series))
+        return round(series[tail] * 100), round(series[-tail - 1] * 100)
+
+    return {provider: {name: bounds(series) for name, series in zip(
+        ("precision", "reference_recall"), metrics, strict=True)} for provider, metrics in values.items()}

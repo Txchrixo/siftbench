@@ -66,10 +66,13 @@ def _ratio(numerator: int, denominator: int, *, empty: str = "No reference findi
     return f"{numerator}/{denominator} ({numerator / denominator:.0%})" if denominator else empty
 
 
-def _with_interval(text: str) -> str:
+def _with_interval(text: str, bounds: tuple[int, int] | None | bool = True) -> str:
     """Add a 95% interval to a "k/n (p%)" reading. Other readings pass through unchanged."""
     match = re.fullmatch(r"([0-9]+)/([0-9]+) \((.+)\)", text)
-    interval = percent_interval(int(match[1]), int(match[2])) if match else None
+    if not match or not bounds:
+        return text
+    interval = (percent_interval(int(match[1]), int(match[2])) if bounds is True
+                else f"95% CI {bounds[0]}-{bounds[1]}%")
     return f"{match[1]}/{match[2]} ({match[3]}, {interval})" if interval else text
 
 
@@ -84,9 +87,9 @@ def _tip(**values: str) -> str:
     return " ".join(f'data-range-{key}="{escape(value, quote=True)}"' for key, value in values.items() if value)
 
 
-def _range_tips(successes: int, total: int, title: str, metric: str) -> dict[str, str]:
+def _range_tips(successes: int, total: int, title: str, metric: str, bounds: tuple[int, int] | None = None) -> dict[str, str]:
     """One explanation per part of the bar: the scale, the likely range and the observed score."""
-    low, high = percent_bounds(successes, total)
+    low, high = bounds or percent_bounds(successes, total)
     width = high - low
     verdict = ("Wide: there are too few observations to be sure of this score." if width >= 40
                else "Moderate: the score is a rough guide." if width >= 20
@@ -106,14 +109,15 @@ def _range_tips(successes: int, total: int, title: str, metric: str) -> dict[str
     }
 
 
-def _range_bar(successes: int, total: int, *, title: str = "", metric: str = "") -> str:
+def _range_bar(successes: int, total: int, *, title: str = "", metric: str = "",
+               bounds: tuple[int, int] | None | bool = True) -> str:
     """A 0-100% bar. Its track, shaded range and score marker each explain themselves on hover."""
-    bounds = percent_bounds(successes, total)
+    bounds = percent_bounds(successes, total) if bounds is True else bounds
     if not bounds:
         return ""
     low, high = bounds
     point = min(max(round(successes / total * 100) - 1, 0), 98)
-    tips = _range_tips(successes, total, title or metric, metric)
+    tips = _range_tips(successes, total, title or metric, metric, bounds)
     return ('<span class="range"><span class="range-plot" tabindex="0" data-range-focus-only '
             f'{tips["summary"]}><svg class="range-bar" viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
             f'<g class="range-part range-scale" {tips["scale"]}><rect class="range-track" x="0" y="7.5" width="100" height="1"/>'
@@ -130,16 +134,22 @@ def _counts(text: str) -> tuple[int, int] | None:
     return (int(match[1]), int(match[2])) if match else None
 
 
-def _interval_chart(rows: list[tuple[str, ...]]) -> str:
+def _score_bounds(intervals: dict | None, provider: str, index: int):
+    return True if intervals is None else intervals[provider]["precision" if index == 1 else "reference_recall"]
+
+
+def _interval_chart(rows: list[tuple[str, ...]], intervals: dict | None = None) -> str:
     """One shared 0-100% axis per metric, so overlapping ranges are visible across reviewers."""
     metrics = (("Precision", 1), ("Reference recall", 2))
-    if not any(_counts(row[index]) for row in rows for _, index in metrics):
+    if not any(_counts(row[index]) and _score_bounds(intervals, row[0], index)
+               for row in rows for _, index in metrics):
         return ""
     ticks = "".join(f"<li>{value}%</li>" for value in (0, 25, 50, 75, 100))
+    interval_method = ("Intervals resample whole PRs with their passages." if intervals is not None else info("interval"))
     out = ['<details class="additional-scores interval-details"><summary>How sure are these scores?</summary>'
            '<figure class="interval-figure"><figcaption>'
            '<p class="subtle">The line is the likely range and the dot is the observed score. '
-           f'Hover any part to see what it means. Where lines overlap, the data cannot tell the reviewers apart.{info("interval")}</p></figcaption>'
+           f'Hover any part to see what it means. {interval_method}</p></figcaption>'
            '<div class="interval-grid"><span class="interval-corner"></span>']
     out.extend(f'<h4 class="interval-heading">{label}</h4>' for label, _ in metrics)
 
@@ -150,12 +160,13 @@ def _interval_chart(rows: list[tuple[str, ...]]) -> str:
         out.append(f'<div class="interval-row" data-reviewer="{escape(row[0], quote=True)}"><div class="interval-name">{_reviewer_display(row[0])}</div>')
         for label, index in metrics:
             counts = _counts(row[index])
-            if not counts:
+            bounds = _score_bounds(intervals, row[0], index)
+            if not counts or not bounds:
                 out.append(f'<div class="interval-cell" data-metric="{label}"><span class="subtle interval-empty">{escape(row[index])}</span></div>')
                 continue
-            low, high = percent_bounds(*counts)
+            low, high = percent_bounds(*counts) if bounds is True else bounds
             score = round(counts[0] / counts[1] * 100)
-            tips = _range_tips(*counts, f"{_reviewer(row[0])} · {label}", label)
+            tips = _range_tips(*counts, f"{_reviewer(row[0])} · {label}", label, (low, high))
             summary = escape(f"{_reviewer(row[0])}, {label}: {score}%, likely {low} to {high}%", quote=True)
             out.append(
                 f'<div class="interval-cell" data-metric="{label}"><svg class="interval-plot" viewBox="0 0 300 26" aria-hidden="true" focusable="false">'
@@ -245,7 +256,7 @@ def _inline_comment_count(pair: dict) -> str:
 
 
 def _grading_pending(pair: dict) -> bool:
-    return any(claim["decision"] in {None, "unresolved"} for claim in pair["claims"])
+    return not pair.get("rubric_ready", True) or any(claim["decision"] in {None, "unresolved"} for claim in pair["claims"])
 
 
 def _attempt_status(pair: dict | None) -> str:
@@ -349,7 +360,7 @@ def _case_title(pair: dict) -> str:
 
 def _case_condition(pair: dict) -> str:
     condition = _label(pair["condition"])
-    repeat = f" · Repeat {pair['repeat_index'] + 1}" if pair["repeat_index"] else ""
+    repeat = f" · Repeat {pair['repeat_index'] + 1}" if pair["repeat_index"] or pair.get("source") else ""
     return f"{condition}{repeat}"
 
 
@@ -358,6 +369,10 @@ def _case_display(pair: dict) -> str:
 
 
 def _case_context(pair: dict, title: str) -> str:
+    if source := pair.get("source"):
+        number = _pull_number(source.get("source_pr"))
+        tags = [f"PR #{number}" if number else "", source.get("language", ""), source.get("date", ""), _case_condition(pair)]
+        return " · ".join(filter(None, tags))
     return _case_condition(pair) if title == _case_name(pair["case_id"]) else _case_display(pair)
 
 
@@ -417,10 +432,17 @@ class ReportBuilder:
         output.mkdir(parents=True, exist_ok=True)
         metrics = ScoreCalculator.calculate(bundle)
         rows = _score_rows(metrics)
-        shared = ", ".join(f"{case} ({condition})" for case, condition in metrics["shared"]) or "No shared completed cases"
+        intervals = metrics.get("intervals")
+        samples = metrics.get("shared_samples")
+        repeated = samples is not None
+        case_labels = {(pair["case_id"], pair["condition"]): _case_title(pair) for pair in bundle["pairs"]}
+        shared = ", ".join(f"{case_labels[key]} ({_label(key[1])})" for key in metrics["shared"]) or "No shared completed cases"
         scope = "Fixture run" if bundle["fixture"] else "Campaign"
         title = f"{scope}: {bundle['run_id']}"
         md = [f"# {title}", "", f"Shared completed cases: {shared}", "", "## Scores", ""]
+        if repeated:
+            md.extend((f'{metrics["scored_prs"]} PRs · {len(samples)} matched and graded passages per reviewer.',
+                       "95% intervals are computed by resampling whole PRs. Insufficient or invariant samples omit the interval.", ""))
         if bundle["fixture"]:
             md.extend(("This summary uses local test data.", ""))
         if rows and not metrics["shared"]:
@@ -428,7 +450,8 @@ class ReportBuilder:
         if metrics["shared"] and any(int(row[7]) or int(row[8]) for row in rows):
             md.extend(("Scores are provisional while findings still await a verdict.", ""))
         for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if metrics["shared"] else ()):
-            md.append(f"- {provider}: precision {_with_interval(precision)}, recall {_with_interval(recall)}, {false} false positives, "
+            md.append(f"- {provider}: precision {_with_interval(precision, _score_bounds(intervals, provider, 1))}, "
+                      f"recall {_with_interval(recall, _score_bounds(intervals, provider, 2))}, {false} false positives, "
                       f"{novel} novel, {context} justified context requests, {duplicates} duplicates, "
                       f"{unresolved} unresolved, {ungraded} ungraded")
         md.extend(["", "## Coverage", ""])
@@ -482,19 +505,23 @@ class ReportBuilder:
         numbers: dict[tuple[str, str], set[str]] = {}
         for pair in bundle["pairs"]:
             if pair["repeat_index"] == 0 and not bundle["fixture"]:
-                numbers.setdefault((pair["case_id"], pair["condition"]), set()).add(_pull_number(pair.get("pr_url")))
+                number = _pull_number(pair.get("source", {}).get("source_pr") or pair.get("pr_url"))
+                numbers.setdefault((pair["case_id"], pair["condition"]), set()).add(number)
         case_titles = {key: (title, " · ".join(f"#{number}" for number in sorted(numbers.get(key, set()) - {""}, key=int)))
                        for key, title in case_titles.items()}
         self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"),
-                     agreement=_agreement_html(bundle.get("annotation_agreement"), bundle))
+                     agreement=_agreement_html(bundle.get("annotation_agreement"), bundle),
+                     matched_passages=len(samples) if repeated else None, scored_prs=metrics.get("scored_prs"),
+                     intervals=intervals)
         if operational:
             self._operations(html, bundle)
         html.append('</section>')
-        self._coverage(html, groups, providers, set(metrics["shared"]), fixture=bundle["fixture"])
+        coverage_samples = set(samples) if repeated else {(*key, 0) for key in metrics["shared"]}
+        self._coverage(html, groups, providers, coverage_samples, fixture=bundle["fixture"])
         self._comparison(html, groups, providers, bundle)
         if rows:
             html.append(f'<!--\n{root.joinpath("LICENSE-LobeIcons.txt").read_text(encoding="utf-8")}\n-->')
-            self._ask(html, bundle, rows, metrics["shared"], completed)
+            self._ask(html, bundle, rows, metrics["shared"], completed, samples=coverage_samples, intervals=intervals)
         html.append(f'</main>{_footer()}')
         html.append(f"{info_templates()}<script>{script}</script></body></html>")
         (output / "results.json").write_bytes(canonical_json(bundle) + b"\n")
@@ -509,14 +536,18 @@ class ReportBuilder:
         html.append(operational_metrics(bundle))
 
     @staticmethod
-    def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int) -> None:
+    def _ask(html: list[str], bundle: dict, rows: list[tuple[str, ...]], shared: list[tuple[str, str]], completed: int,
+             *, samples: set, intervals: dict | None = None) -> None:
         pairs = bundle["pairs"]
         publications = [pair for pair in pairs if pair.get("publication")]
         reviewers = [_reviewer(provider) for provider in sorted({pair["provider_id"] for pair in pairs})]
         repeats = max((pair["repeat_index"] for pair in pairs), default=0) + 1
         prompt = [
+            "Help me interpret this SiftBench comparison of AI code reviewers." if intervals is not None else
             "Help me interpret this SiftBench comparison of AI code reviewers. Treat it as a small pilot, not a ranking.", "",
             f"Reviewers: {', '.join(reviewers)}.",
+            f"{completed} of {len(pairs)} attempts completed. Scores cover {len(samples)} matched, fully graded passages "
+            f"per reviewer across {len(shared)} PR conditions." if intervals is not None else
             f"{completed} of {len(pairs)} review attempts completed. Scores cover {len(shared)} shared case conditions "
             "(pull request plus condition) that every reviewer completed. Repeats are excluded from scores.",
         ]
@@ -529,38 +560,43 @@ class ReportBuilder:
             titles = {(pair["case_id"], pair["condition"]): _case_title(pair) for pair in pairs if pair["repeat_index"] == 0}
             prompt.extend(["", "Scored case conditions"])
             prompt.extend(f"- {titles.get(key, _case_name(key[0]))} · {_label(key[1])}" for key in shared)
-        unfinished = [pair for pair in pairs if pair["status"] != "completed" and pair["repeat_index"] == 0]
+        unfinished = [pair for pair in pairs if pair["status"] != "completed"
+                      and (intervals is not None or pair["repeat_index"] == 0)]
         if unfinished:
             prompt.extend(["", "Attempts that did not complete (outside the scores)"])
-            prompt.extend(f"- {_reviewer(pair['provider_id'])} · {_case_title(pair)} · {_label(pair['condition'])}: {_review_status(pair)}"
-                          for pair in unfinished)
+            for provider in sorted({pair["provider_id"] for pair in unfinished}):
+                statuses = Counter(_review_status(pair) for pair in unfinished if pair["provider_id"] == provider)
+                prompt.append(f"- {_reviewer(provider)} · " + " · ".join(f"{label} {count}" for label, count in sorted(statuses.items())))
         prompt.extend(["", "Aggregated scores" if shared else "No shared case conditions are ready to score."])
         for provider, precision, recall, false, novel, context, duplicates, unresolved, ungraded in (rows if shared else ()):
-            prompt.append(f"- {_reviewer(provider)} · Precision {_with_interval(precision)} · Reference recall {_with_interval(recall)} · Additional findings {novel} · "
+            prompt.append(f"- {_reviewer(provider)} · Precision {_with_interval(precision, _score_bounds(intervals, provider, 1))} · "
+                          f"Reference recall {_with_interval(recall, _score_bounds(intervals, provider, 2))} · Additional findings {novel} · "
                           f"False positives {false} · Justified context requests {context} · Duplicates {duplicates} · Unresolved {unresolved} · Ungraded {ungraded}")
         if shared:
             spread = []
             for provider in sorted({pair["provider_id"] for pair in pairs}):
                 counts = [sum(claim["decision"] in {"confirmed_expected", "confirmed_novel", "false_positive"} for claim in pair["claims"])
-                          for pair in pairs if pair["provider_id"] == provider and pair["repeat_index"] == 0
-                          and pair["status"] == "completed" and (pair["case_id"], pair["condition"]) in set(shared)]
+                          for pair in pairs if pair["provider_id"] == provider
+                          and (pair["case_id"], pair["condition"], pair["repeat_index"]) in samples]
                 spread.append(f"- {_reviewer(provider)}: {sum(counts)} findings with a verdict across "
-                              f"{sum(1 for count in counts if count)} pull requests (most on one pull request: {max(counts, default=0)})")
+                              f"{sum(1 for count in counts if count)} review attempts (most on one attempt: {max(counts, default=0)})")
             prompt.extend(["", "How findings are spread", *spread])
         prompt.extend(["", "Definitions",
                        "- Precision: confirmed findings (expected plus additional) divided by findings with a verdict (confirmed plus false positives). "
                        "Duplicates, context requests and review messages are excluded.",
                        "- Reference recall: expected findings detected divided by expected findings in a rubric frozen before the reviews.",
                        "- Additional findings: verified real problems outside the rubric.",
+                       "- 95% CI: whole-PR bootstrap with all scored passages kept together." if intervals is not None else
                        "- 95% CI: a Wilson interval that counts each finding separately. Findings one reviewer leaves on the same "
                        "pull request are related, so the interval is slightly too narrow when a reviewer has several findings per pull request.", "",
                        "Limits of this benchmark"])
-        prompt.append(f"- Only {len(shared)} scored case conditions" + (", with one run each" if repeats == 1 else f", with up to {repeats} runs each")
-                      + ". With so few cases, one finding can move a percentage by many points, which is why the 95% intervals are wide.")
-        prompt.extend(["- The rubric and public case branches may have been seen by the reviewers beforehand.",
-                       "- Verdicts come from a single grader. There is no inter-annotator agreement.",
-                       "- Reviewers may have run in different campaigns, so timing and cost are not a controlled comparison."])
-        if any(int(row[7]) or int(row[8]) for row in rows):
+        prompt.append(f"- {len(shared)} scored case conditions, with up to {repeats} passages each.")
+        prompt.append("- Reviewers may have seen the original public projects or changes.")
+        if bundle.get("annotation_agreement"):
+            prompt.append("- The report includes annotation agreement. Use its sample size and annotator roles when interpreting it.")
+        if bundle.get("source_campaigns"):
+            prompt.append("- Reviewers ran in different campaigns. Compare timing and cost in that context.")
+        if shared and any(int(row[7]) or int(row[8]) for row in rows):
             prompt.append("- Some findings are unresolved or ungraded, so the scores are provisional.")
         if isinstance(bundle.get("analysis"), str) and bundle["analysis"].strip():
             prompt.extend(["", "Methodology note from the operator", " ".join(bundle["analysis"].split())])
@@ -593,7 +629,7 @@ class ReportBuilder:
                     'No review text or source code is included.</p></dialog>')
 
     @staticmethod
-    def _coverage(html: list[str], groups: dict, providers: list[str], shared: set[tuple[str, str]], *, fixture: bool) -> None:
+    def _coverage(html: list[str], groups: dict, providers: list[str], shared: set[tuple[str, str, int]], *, fixture: bool) -> None:
         html.append('<section id="coverage" data-report-view tabindex="-1"><div class="view-heading"><h1>Review coverage</h1>'
                     '<p class="view-intro">Open a reviewer’s status to inspect the attempt, or follow the GitHub links to the original evidence.</p></div>')
         if not groups:
@@ -618,10 +654,13 @@ class ReportBuilder:
             context = _case_context(first, title)
             html.append('<tr><th scope="row">')
             html.append(f'<span class="coverage-title">{escape(title)}</span>')
-            scored = (first["case_id"], first["condition"]) in shared and not first["repeat_index"]
+            scored = (first["case_id"], first["condition"], first["repeat_index"]) in shared
             scope = "Scored" if scored else "Outside score"
             scored_class = ' is-scored' if scored else ''
-            html.append(f'<span class="coverage-case">{escape(context)}</span>'
+            source_url = first.get("source", {}).get("source_pr")
+            original = (f'<a class="coverage-case" href="{href}">{icon("pr")}Source PR #{_pull_number(source_url)}</a>'
+                        if not fixture and (href := _link(source_url)) and _pull_number(source_url) else "")
+            html.append(f'<span class="coverage-case">{escape(context)}</span>{original}'
                         f'<span class="coverage-scope{scored_class}">{scope}{info("scope")}</span></th>')
             for provider in providers:
                 pair = group.get(provider)
@@ -662,18 +701,25 @@ class ReportBuilder:
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict,
-                *, analysis: str | None = None, agreement: str = "") -> None:
+                *, analysis: str | None = None, agreement: str = "", matched_passages: int | None = None,
+                scored_prs: int | None = None, intervals: dict | None = None) -> None:
         html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
-        if shared:
+        if matched_passages is not None:
+            html.append(f'<p class="subtle">{scored_prs} PRs · {matched_passages} matched and fully graded passages per reviewer. '
+                        'Confidence intervals resample whole PRs with their passages.</p>')
+        elif shared:
             html.append(f'<p class="subtle">Scores use only the case conditions completed by every reviewer.{info("interval")}</p>')
         html.append('</div>')
         if not shared:
             html.append(_report_notice("coverage", "No shared scores yet",
-                                      "At least one case condition must be completed by every reviewer.",
+                                      ("At least one matching passage must be completed and fully graded for every reviewer."
+                                       if matched_passages is not None else
+                                       "At least one case condition must be completed by every reviewer."),
                                       '<a href="#coverage">Check review coverage</a>'))
         else:
-            ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"), rows, (1, 2, 4), primary=True)
-            html.append(_interval_chart(rows))
+            ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"),
+                                       rows, (1, 2, 4), primary=True, intervals=intervals)
+            html.append(_interval_chart(rows, intervals))
             if any(int(row[7]) or int(row[8]) for row in rows):
                 html.append('<p class="score-grading-note subtle"><strong>Grading incomplete.</strong> '
                             'Scores reflect verdicts recorded so far. See Additional metrics for outstanding findings.</p>')
@@ -712,7 +758,8 @@ class ReportBuilder:
         html.append('</aside></div>')
 
     @staticmethod
-    def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...], *, primary: bool = False) -> None:
+    def _score_table(html: list[str], label: str, columns: tuple[str, ...], rows: list[tuple[str, ...]], indexes: tuple[int, ...],
+                     *, primary: bool = False, intervals: dict | None = None) -> None:
         kind = " main-scores" if primary else ""
         html.append(f'<div class="scroll score-table{kind}" tabindex="0" role="region" aria-label="{label}">'
                     '<table><thead><tr><th scope="col">Reviewer</th>')
@@ -724,7 +771,8 @@ class ReportBuilder:
                 value, divider, percentage = row[index].partition(" (")
                 fraction = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
                 spread = (_range_bar(int(fraction[1]), int(fraction[2]), title=f"{_reviewer(row[0])} · {columns[indexes.index(index)]}",
-                                     metric=columns[indexes.index(index)]) if fraction and index in (1, 2) else "")
+                                     metric=columns[indexes.index(index)], bounds=_score_bounds(intervals, row[0], index))
+                          if fraction and index in (1, 2) else "")
                 cell = (f'<strong>{escape(percentage.removesuffix(")"))}</strong><span class="score-ratio">{escape(value)}</span>{spread}'
                         if divider else f'<strong>{escape(value)}</strong>' if primary and value.isdigit()
                         else f'<span class="score-empty-text">{escape(value)}</span>' if primary else escape(value))

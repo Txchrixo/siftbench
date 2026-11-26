@@ -48,3 +48,12 @@ def test_interval_chart_shares_one_axis_and_explains_each_range():
     assert 'data-range-detail="3 of 4 expected problems found"' in bar and "Wide: there are too few" in bar
     assert bar.count("range-part") == 3 and "Left end 0%: no expected problem found" in bar
     assert '<span class="range-label">Likely 30-95%' in bar and bar.index("range-label") > bar.index("</svg></span>")
+
+
+def test_score_readings_take_bootstrap_bounds_and_leave_empty_readings_alone():
+    from reviewbench.report import _with_interval
+
+    assert _with_interval("3/4 (75%)", (40, 100)) == "3/4 (75%, 95% CI 40-100%)"
+    assert _with_interval("3/4 (75%)", None) == "3/4 (75%)"
+    assert _with_interval("No reference findings", (40, 100)) == "No reference findings"
+    assert _with_interval("3/4 (75%)").startswith("3/4 (75%, 95% CI ")
