@@ -1,0 +1,90 @@
+{
+  "publication_bounds_seconds": [
+    60,
+    120,
+    180,
+    240,
+    360,
+    600
+  ],
+  "publication_bins": {
+    "coderabbit": [
+      0,
+      4,
+      16,
+      9,
+      14,
+      7,
+      0
+    ],
+    "greptile": [
+      0,
+      14,
+      23,
+      10,
+      3,
+      0,
+      0
+    ],
+    "proofline": [
+      23,
+      22,
+      1,
+      1,
+      0,
+      2,
+      1
+    ]
+  },
+  "reference_overlap": [
+    {
+      "reviewers": [
+        "coderabbit",
+        "greptile",
+        "proofline"
+      ],
+      "count": 13
+    },
+    {
+      "reviewers": [
+        "coderabbit",
+        "greptile"
+      ],
+      "count": 6
+    },
+    {
+      "reviewers": [
+        "greptile",
+        "proofline"
+      ],
+      "count": 2
+    },
+    {
+      "reviewers": [
+        "coderabbit"
+      ],
+      "count": 3
+    },
+    {
+      "reviewers": [
+        "greptile"
+      ],
+      "count": 1
+    },
+    {
+      "reviewers": [
+        "proofline"
+      ],
+      "count": 1
+    },
+    {
+      "reviewers": [],
+      "count": 8
+    }
+  ],
+  "annotation_agreement": {
+    "claims": 233,
+    "unanimous": 197,
+    "kappa": 0.8513
+  }
+}

@@ -7,8 +7,11 @@ on:
       - .github/workflows/pages.yml
       - docs/results-page/**
       - benchmark/evaluation-v2/summary.json
+      - benchmark/evaluation-v2/public-charts.json
       - assets/brand/**
       - src/reviewbench/report/theme.css
+      - src/reviewbench/report/icons.py
+      - src/reviewbench/report/footer-wordmark.svg
       - src/reviewbench/report/reviewer-*
   workflow_dispatch:
 

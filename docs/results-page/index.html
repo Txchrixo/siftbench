@@ -8,6 +8,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="results.css">
+  <script src="results.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to results</a>
@@ -15,9 +16,10 @@
     <div class="frame header-inner">
       <a href="./" class="brand"><img src="logo-on-dark.svg" alt="SiftBench" width="140" height="39"></a>
       <nav aria-label="Report sections">
-        <a href="#scores">Scores</a>
-        <a href="#method">Method</a>
-        <a href="https://github.com/Txchrixo/siftbench">GitHub</a>
+        <a href="#scores">${icon_overview}Scores</a>
+        <a href="#timing">${icon_coverage}Timing</a>
+        <a href="#method">${icon_info}Methodology</a>
+        <a href="https://github.com/Txchrixo/siftbench">${icon_external}GitHub</a>
       </nav>
     </div>
   </header>
@@ -35,36 +37,91 @@
       <div><dt>Reference findings</dt><dd>$expected</dd></div>
     </dl>
 
-    <div class="report-grid">
-      <section class="panel" id="scores" aria-labelledby="score-title">
+    <div class="report-grid" id="scores">
+      <section class="panel" aria-labelledby="score-title">
         <h2 id="score-title">Reviewer scores</h2>
         <table class="scores">
           <caption class="visually-hidden">Precision and reference recall on the shared scored cases</caption>
           <thead><tr><th scope="col">Reviewer</th><th scope="col">Precision</th><th scope="col">Reference recall</th></tr></thead>
           <tbody>$score_rows</tbody>
         </table>
-        <p class="table-note">Dots mark the observed scores. Lines show 95% confidence intervals from resampling whole PRs.</p>
+        <details class="analysis-disclosure">
+          <summary>How sure are these scores?</summary>
+          <div class="disclosure-body">
+            <p>Dots mark the observed scores. Lines show 95% confidence intervals from resampling whole PRs. An interval is omitted when the observations are insufficient or invariant.</p>
+            <p>These intervals reflect variation across sampled PRs. Each reviewer ran once per change, so variation between runs was not measured.</p>
+          </div>
+        </details>
       </section>
 
-      <section class="panel method" id="method" aria-labelledby="method-title">
-        <h2 id="method-title">How to read the results</h2>
+      <aside class="panel guide" aria-labelledby="guide-title">
+        <h2 id="guide-title">Scoring scope</h2>
         <dl>
           <div><dt>Precision</dt><dd>Share of scored findings confirmed as valid.</dd></div>
           <div><dt>Reference recall</dt><dd>Share of rubric findings the reviewer detected.</dd></div>
+          <div><dt>Additional findings</dt><dd>Verified findings beyond the reference rubric.</dd></div>
+          <div><dt>Shared scoring</dt><dd>Two cases remain in coverage with unresolved findings. The score table uses the $scored_prs cases fully graded for every reviewer.</dd></div>
         </dl>
-        <details>
-          <summary>Scoring scope and limits</summary>
-          <p>Each app reviewed each pinned change once in a dedicated repository. The rubric stayed in the evaluator workspace. All 150 first eligible reviews were verified against their GitHub publications.</p>
-          <p>Two cases had unresolved findings and were excluded from the shared scores. The comparison describes this campaign. A single run per tool and case leaves run-to-run variation unmeasured.</p>
-          <p>Read the <a href="https://github.com/Txchrixo/siftbench/blob/main/docs/operations.md#4-grade-reconcile-and-compare">scoring protocol</a> for the adjudication and replay workflow.</p>
-        </details>
-      </section>
+        <a class="panel-link" href="#method">Read the methodology</a>
+      </aside>
     </div>
 
-    <details class="panel coverage" id="coverage">
-      <summary>Run coverage</summary>
+    <div class="section-stack">
+      <details class="panel analysis-disclosure" id="reference-overlap">
+        <summary>${icon_compare}Reference finding overlap</summary>
+        <div class="disclosure-body">
+          <p>Each row is an exact combination of reviewers. Bars show the share of all $expected reference findings in the shared scored cases.</p>
+          <ul class="overlap-list">${overlap_rows}</ul>
+        </div>
+      </details>
+
+      <details class="panel analysis-disclosure">
+        <summary>${icon_file}Additional findings and false positives</summary>
+        <div class="table-region" role="region" aria-label="Other findings by reviewer" tabindex="0">
+          <table class="detail-table">
+            <thead><tr><th scope="col">Reviewer</th><th scope="col">Additional findings</th><th scope="col">False positives</th><th scope="col">Duplicates</th></tr></thead>
+            <tbody>${finding_rows}</tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <section class="panel section-panel" id="timing" aria-labelledby="timing-title">
+      <header class="section-heading">
+        <h2 id="timing-title">Review publication times</h2>
+        <p>Elapsed time from the recorded review start to the verified GitHub review submission or completed check. Individual comments can appear before or after that signal.</p>
+      </header>
+      <figure class="timing-figure" aria-labelledby="timing-title">
+        <figcaption class="timing-key"><span><i></i>Median</span><span><i></i>95th percentile</span></figcaption>
+        <ul class="timing-list">${timing_rows}</ul>
+        <div class="timing-axis" aria-hidden="true"><span>0 s</span><span>$timing_midpoint s</span><span>$timing_limit s</span></div>
+      </figure>
+      <details class="analysis-disclosure">
+        <summary>Publication time distribution</summary>
+        <div class="disclosure-body"><p>Number of reviews in each elapsed-time band, in seconds.</p></div>
+        <div class="table-region" role="region" aria-label="Distribution of publication times" tabindex="0">
+          <table class="detail-table distribution">
+            <thead><tr><th scope="col">Reviewer</th>$distribution_headers</tr></thead>
+            <tbody>$distribution_rows</tbody>
+          </table>
+        </div>
+      </details>
+      <details class="analysis-disclosure">
+        <summary>Time to first verified finding</summary>
+        <div class="disclosure-body"><p>Only reviews with a verified finding and a recorded timestamp contribute. Sample sizes differ by reviewer.</p></div>
+        <div class="table-region" role="region" aria-label="Time to first verified finding" tabindex="0">
+          <table class="detail-table first-finding">
+            <thead><tr><th scope="col">Reviewer</th><th scope="col">Elapsed seconds</th></tr></thead>
+            <tbody>$first_finding_rows</tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+    <details class="panel analysis-disclosure section-panel" id="coverage">
+      <summary>${icon_coverage}Run coverage</summary>
       <div class="table-region" role="region" aria-label="Coverage table" tabindex="0">
-        <table>
+        <table class="detail-table">
           <caption class="visually-hidden">Completed and remaining attempts per reviewer</caption>
           <thead><tr><th scope="col">Reviewer</th><th scope="col">Completed</th><th scope="col">Quota stops</th><th scope="col">Failed</th><th scope="col">Other</th></tr></thead>
           <tbody>$coverage_rows</tbody>
@@ -72,9 +129,44 @@
       </div>
     </details>
 
+    <section class="panel section-panel" id="method" aria-labelledby="method-title">
+      <header class="section-heading">
+        <h2 id="method-title">Campaign methodology</h2>
+        <p>How the inputs were fixed, how findings were graded and what the scores can support.</p>
+      </header>
+      <details class="analysis-disclosure" open>
+        <summary>Inputs and isolation</summary>
+        <div class="disclosure-body">
+          <p>Each tool received the same 50 code-only changes at pinned base and head revisions. The reference rubric stayed in the evaluator workspace. The campaign used 120 repositories, with 40 assigned exclusively to each reviewer. Some repositories held multiple PRs for the same tool, so prior reviews or public upstream history may have influenced later results.</p>
+          <p>The audit verified all 150 captured reviews against GitHub. Four interrupted captures were recovered from their original PRs without triggering another review.</p>
+        </div>
+      </details>
+      <details class="analysis-disclosure">
+        <summary>Grading and agreement</summary>
+        <div class="disclosure-body">
+          <p>Initial verdicts were AI-assisted against the frozen rubric. Three Claude models assessed the same claims separately with reviewer labels removed, although wording could still reveal the source. They agreed unanimously on <strong>$unanimous of $annotated ($agreement_percent%)</strong>, with Fleiss’ κ of <strong>$kappa</strong>. The models share a family and can share systematic errors.</p>
+          <p>Disagreements were adjudicated against the pinned sources. Two PRs with unresolved findings remain in coverage. Scores use the $scored_prs fully graded cases shared by all three reviewers.</p>
+        </div>
+      </details>
+      <details class="analysis-disclosure">
+        <summary>Limits and reproducibility</summary>
+        <div class="disclosure-body">
+          <p>There was one run per reviewer and change. Review cost was not measured, and the scored cases had no graded high- or critical-severity references. The results describe this campaign and its reviewer settings.</p>
+          <p><a href="https://github.com/Txchrixo/siftbench/blob/main/docs/operations.md#4-grade-reconcile-and-compare">Read the grading and replay protocol</a> · <a href="https://github.com/Txchrixo/siftbench/blob/main/benchmark/evaluation-v2/check_symfony_yaml.py">See the Symfony YAML verification</a></p>
+        </div>
+      </details>
+    </section>
+
     <footer class="report-footer">
-      <span>SiftBench</span>
-      <div><a href="summary.json" download>Download results JSON</a><a href="https://github.com/Txchrixo/siftbench/blob/main/ARCHITECTURE.md">Architecture</a></div>
+      <div class="footer-top">
+        <strong>SiftBench</strong>
+        <nav aria-label="Report resources">
+          <a href="summary.json" download>Results JSON</a>
+          <a href="public-charts.json" download>Chart data</a>
+          <a href="https://github.com/Txchrixo/siftbench/blob/main/ARCHITECTURE.md">Architecture</a>
+        </nav>
+      </div>
+      <img class="footer-wordmark" src="footer-wordmark.svg" alt="" width="270" height="64">
     </footer>
   </main>
 </body>
