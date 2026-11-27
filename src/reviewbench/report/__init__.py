@@ -391,6 +391,10 @@ def _encoded(name: str) -> str:
     return base64.b64encode(files(__package__).joinpath(name).read_bytes()).decode("ascii")
 
 
+def _report_favicon() -> str:
+    return f'<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{_encoded("favicon.svg")}">'
+
+
 def _csp_hash(value: str) -> str:
     return base64.b64encode(hashlib.sha256(value.encode()).digest()).decode("ascii")
 
@@ -480,6 +484,7 @@ class ReportBuilder:
         html = ["<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
                 '<meta name="viewport" content="width=device-width, initial-scale=1">',
                 f'<meta http-equiv="Content-Security-Policy" content="{policy}">',
+                _report_favicon(),
                 f"<title>{escape(title)} | SiftBench</title><style>{css}</style></head>",
                 '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
                 f'<a class="brand" href="#overview"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',

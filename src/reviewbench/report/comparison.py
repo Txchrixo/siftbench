@@ -6,7 +6,7 @@ from html import escape
 from importlib.resources import files
 from pathlib import Path
 
-from . import (_SELECT_CHEVRON, _footer, _range_bar, _with_interval, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_notice,
+from . import (_SELECT_CHEVRON, _footer, _range_bar, _with_interval, _case_title, _csp_hash, _encoded, _label, _link, _pull_number, _report_favicon, _report_notice,
                _ratio, _report_styles, _reviewer, _reviewer_display)
 from .icons import icon
 from .info import info, info_templates
@@ -341,7 +341,9 @@ def write_comparison(result: dict, out: Path) -> None:
     html = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             f'<meta http-equiv="Content-Security-Policy" content="{policy}">',
-            f'<title>Compare campaigns | SiftBench</title><style>{css}</style></head>',
+            _report_favicon(),
+            '<title>Compare campaigns | SiftBench</title>'
+            f'<style>{css}</style></head>',
             '<body><a class="skip-link" href="#main">Skip to report</a><header class="shell"><div class="shell-inner">',
             f'<a class="brand" href="#main"><img alt="" src="data:image/svg+xml;base64,{_encoded("mark-on-dark.svg")}">SiftBench</a>',
             f'<nav aria-label="Campaign comparison"><a href="#matched-metrics">{icon("compare")}Metrics</a>'
