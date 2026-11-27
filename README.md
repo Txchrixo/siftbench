@@ -6,7 +6,11 @@
 
 SiftBench runs reviewers on pinned GitHub pull requests, saves the first eligible review, and traces each scored finding to its comment, verdict, and supporting evidence. The Python runner can resume an interrupted campaign. The HTML report can be rebuilt offline from an archived bundle.
 
-[View results](https://txchrixo.github.io/siftbench/) · [Quickstart](#quickstart) · [Architecture](ARCHITECTURE.md) · [Run your own campaign](docs/operations.md) · [CI](https://github.com/Txchrixo/siftbench/actions/workflows/ci.yml)
+[<img src="assets/readme/results.svg" alt="" width="16" height="16" valign="middle"> View results](https://txchrixo.github.io/siftbench/) ·
+[<img src="assets/readme/quickstart.svg" alt="" width="16" height="16" valign="middle"> Quickstart](#quickstart) ·
+[<img src="assets/readme/architecture.svg" alt="" width="16" height="16" valign="middle"> Architecture](ARCHITECTURE.md) ·
+[<img src="assets/readme/campaign.svg" alt="" width="16" height="16" valign="middle"> Run your own campaign](docs/operations.md) ·
+[<img src="assets/readme/ci.svg" alt="" width="16" height="16" valign="middle"> CI](https://github.com/Txchrixo/siftbench/actions/workflows/ci.yml)
 
 ## Benchmark results
 
@@ -14,9 +18,9 @@ CodeRabbit, Greptile, and Proofline each reviewed the same 50 pinned code change
 
 | Reviewer | Completed | Precision | Reference recall |
 | --- | ---: | ---: | ---: |
-| CodeRabbit | 50/50 | 50/50 (100%) | 22/34 (65%) |
-| Greptile | 50/50 | 45/46 (98%) | 22/34 (65%) |
-| Proofline | 50/50 | 39/43 (91%) | 16/34 (47%) |
+| <img src="src/reviewbench/report/reviewer-coderabbit.svg" alt="" width="18" height="18" valign="middle"> CodeRabbit | 50/50 | 50/50 (100%) | 22/34 (65%) |
+| <img src="src/reviewbench/report/reviewer-greptile.png" alt="" width="18" height="18" valign="middle"> Greptile | 50/50 | 45/46 (98%) | 22/34 (65%) |
+| <img src="assets/readme/reviewer-proofline.png" alt="" width="18" height="18" valign="middle"> Proofline | 50/50 | 39/43 (91%) | 16/34 (47%) |
 
 The reviewers agreed on 13 of the 34 reference findings and all missed eight. CodeRabbit and Greptile reached the same recall while catching different defects. Each tool reviewed each change once, so these results describe this campaign.
 
