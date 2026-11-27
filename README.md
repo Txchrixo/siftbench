@@ -6,7 +6,7 @@
 
 SiftBench runs reviewers on pinned GitHub pull requests, saves the first eligible review, and traces each scored finding to its comment, verdict, and supporting evidence. The Python runner can resume an interrupted campaign. The HTML report can be rebuilt offline from an archived bundle.
 
-[Quickstart](#quickstart) · [Results](#benchmark-results) · [Architecture](ARCHITECTURE.md) · [Run your own campaign](docs/operations.md) · [CI](https://github.com/Txchrixo/siftbench/actions/workflows/ci.yml)
+[View results](https://txchrixo.github.io/siftbench/) · [Quickstart](#quickstart) · [Architecture](ARCHITECTURE.md) · [Run your own campaign](docs/operations.md) · [CI](https://github.com/Txchrixo/siftbench/actions/workflows/ci.yml)
 
 ## Benchmark results
 
