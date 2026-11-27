@@ -106,6 +106,7 @@ summary .report-icon { color: var(--text-secondary); }
 .table-region { overflow-x: auto; scrollbar-width: thin; padding-bottom: .2rem; }
 .table-region:focus-visible { outline-offset: -3px; }
 .detail-table { min-inline-size: 30rem; font-variant-numeric: tabular-nums; }
+.detail-table .reviewer { white-space: nowrap; overflow-wrap: normal; }
 .detail-table td, .detail-table th:not(:first-child) { text-align: end; }
 .detail-table tbody tr:hover { background: var(--surface); }
 .distribution { min-inline-size: 35rem; }
