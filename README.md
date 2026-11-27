@@ -2,7 +2,7 @@
   <img src="assets/brand/logo-readme.svg" alt="SiftBench" width="260">
 </p>
 
-# Compare AI code reviewers on the same changes
+<h1 align="center">A benchmark for AI code reviewers</h1>
 
 SiftBench runs reviewers on pinned GitHub pull requests, saves the first eligible review, and traces each scored finding to its comment, verdict, and supporting evidence. The Python runner can resume an interrupted campaign. The HTML report can be rebuilt offline from an archived bundle.
 
@@ -10,7 +10,7 @@ SiftBench runs reviewers on pinned GitHub pull requests, saves the first eligibl
 
 ## Benchmark results
 
-Three reviewers each covered 50 pinned changes. All **150 reviews** were verified against their GitHub publications. Two cases had unresolved findings, leaving **48 shared cases** for scoring.
+CodeRabbit, Greptile, and Proofline each reviewed the same 50 pinned code changes. All **150 reviews** were verified against their GitHub publications. Two cases had unresolved findings, leaving **48 shared cases** for scoring.
 
 | Reviewer | Completed | Precision | Reference recall |
 | --- | ---: | ---: | ---: |
