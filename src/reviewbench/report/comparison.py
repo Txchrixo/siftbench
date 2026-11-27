@@ -21,7 +21,7 @@ _METRICS = (
     ("Reference recall", "Expected findings detected"),
     ("False positives", "Per graded pull request"),
     ("Severe findings missed", "High or critical references on graded PRs"),
-    ("Review completion", "Time until the review was published"),
+    ("Review publication", "Time to the verified GitHub review or check signal"),
     ("First verified finding", "Time until the first confirmed finding was published"),
     ("Observed cost", "Median per attempt, in currency minor units"),
 )
@@ -37,7 +37,7 @@ _MISSING_REASONS = {
     "Reference recall": "There are no expected findings in this comparison.",
     "False positives": "No fully graded PRs are available in this scope.",
     "Severe findings missed": "No high- or critical-severity reference findings on fully graded PRs.",
-    "Review completion": "No valid start-to-publication times were recorded.",
+    "Review publication": "No valid start-to-publication signal times were recorded.",
     "First verified finding": "No valid times from review start to a confirmed finding were recorded.",
     "Observed cost": "No billing data was recorded for these attempts.",
 }

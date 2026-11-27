@@ -103,7 +103,8 @@ def publication_latency(bundle: dict) -> str:
                     f'{_plot_row(samples, ticks[-1], ticks, bundle["fixture"])}</div>')
     html.extend(('<div class="latency-row latency-axis"><span class="subtle">Elapsed seconds</span>'
                  f'<ol class="latency-ticks subtle" aria-hidden="true">{axis}</ol></div>',
-                 '<p class="latency-context subtle">Measured from the recorded review start to the verified publication signal.'
+                 '<p class="latency-context subtle">Measured from the recorded review start to the verified GitHub review submission '
+                 'or completed check. Comments can appear before or after this signal.'
                  + (' The source campaigns ran separately.' if len(bundle.get("source_campaigns", [])) > 1 else '')
                  + '</p><details class="analysis-disclosure latency-data"><summary>Review times and sources</summary><ul>'))
     for _, samples in reviewers:

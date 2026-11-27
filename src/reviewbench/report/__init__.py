@@ -200,17 +200,18 @@ def _agreement_html(agreement: object, bundle: dict) -> str:
         who = " and ".join(f"{count} {kind.upper() if kind == 'ai' else kind}" for kind, count in sorted(kinds.items()))
         kappa = agreement["kappa"]
         found = {claim["claim_id"]: (pair, claim) for pair in bundle["pairs"] for claim in pair["claims"]}
-        shown = "Not defined" if kappa is None else f"{kappa:.2f}"
+        shown = "Not defined" if kappa is None else f"{kappa:.4f}".rstrip("0").rstrip(".")
+        unanimous_pct = f'{agreement["agreement"] * 100:.2f}'.rstrip("0").rstrip(".")
         out = ['<details class="agreement"><summary>Grading agreement</summary>'
                f'<p class="agreement-lead">{escape(who)} annotator{"s" if len(annotators) != 1 else ""} judged '
                f'{agreement["claims"]} findings independently, without seeing each other or the recorded verdicts.</p>'
                '<dl class="agreement-stats">'
                f'<div><dt>Unanimous</dt><dd>{agreement["unanimous"]} of {agreement["claims"]}'
-               f'<small>{agreement["agreement"]:.0%} identical verdicts</small></dd></div>'
+               f'<small>{unanimous_pct}% identical verdicts</small></dd></div>'
                f'<div><dt>{escape(agreement["kappa_method"])} kappa{info("agreement")}</dt><dd>{shown}'
                f'<small>{escape(agreement["kappa_label"])}</small></dd></div>'
                f'<div><dt>Majority matches record</dt><dd>{agreement["matches_recorded_verdict"]} of {agreement["claims"]}'
-               '<small>recorded verdicts the panel confirms</small></dd></div></dl>']
+               '<small>recorded verdicts with the same majority label</small></dd></div></dl>']
         split = agreement["disagreements"]
         if split:
             out.append('<p class="agreement-note subtle">Listed below: findings where the annotators split, or where their majority differs from the recorded verdict.</p>')
@@ -439,7 +440,8 @@ class ReportBuilder:
         shared = ", ".join(f"{case_labels[key]} ({_label(key[1])})" for key in metrics["shared"]) or "No shared completed cases"
         scope = "Fixture run" if bundle["fixture"] else "Campaign"
         title = f"{scope}: {bundle['run_id']}"
-        md = [f"# {title}", "", f"Shared completed cases: {shared}", "", "## Scores", ""]
+        shared_label = "Shared scored cases" if repeated else "Shared completed cases"
+        md = [f"# {title}", "", f"{shared_label}: {shared}", "", "## Scores", ""]
         if repeated:
             md.extend((f'{metrics["scored_prs"]} PRs · {len(samples)} matched and graded passages per reviewer.',
                        "95% intervals are computed by resampling whole PRs. Insufficient or invariant samples omit the interval.", ""))
@@ -454,6 +456,8 @@ class ReportBuilder:
                       f"recall {_with_interval(recall, _score_bounds(intervals, provider, 2))}, {false} false positives, "
                       f"{novel} novel, {context} justified context requests, {duplicates} duplicates, "
                       f"{unresolved} unresolved, {ungraded} ungraded")
+        if isinstance(bundle.get("analysis"), str) and bundle["analysis"].strip():
+            md.extend(["", "## Campaign methodology", "", bundle["analysis"].strip()])
         md.extend(["", "## Coverage", ""])
         for pair in bundle["pairs"]:
             case_title = escape(" ".join((pair.get("case_title") or "").split()))
@@ -509,14 +513,17 @@ class ReportBuilder:
                 numbers.setdefault((pair["case_id"], pair["condition"]), set()).add(number)
         case_titles = {key: (title, " · ".join(f"#{number}" for number in sorted(numbers.get(key, set()) - {""}, key=int)))
                        for key, title in case_titles.items()}
+        from .overlap import reference_overlap
+
+        coverage_samples = set(samples) if repeated else {(*key, 0) for key in metrics["shared"]}
         self._scores(html, metrics["shared"], rows, case_titles, analysis=bundle.get("analysis"),
                      agreement=_agreement_html(bundle.get("annotation_agreement"), bundle),
+                     overlap=reference_overlap(bundle["pairs"], coverage_samples, providers),
                      matched_passages=len(samples) if repeated else None, scored_prs=metrics.get("scored_prs"),
                      intervals=intervals)
         if operational:
             self._operations(html, bundle)
         html.append('</section>')
-        coverage_samples = set(samples) if repeated else {(*key, 0) for key in metrics["shared"]}
         self._coverage(html, groups, providers, coverage_samples, fixture=bundle["fixture"])
         self._comparison(html, groups, providers, bundle)
         if rows:
@@ -701,7 +708,7 @@ class ReportBuilder:
 
     @staticmethod
     def _scores(html: list[str], shared: list[tuple[str, str]], rows: list[tuple[str, ...]], case_titles: dict,
-                *, analysis: str | None = None, agreement: str = "", matched_passages: int | None = None,
+                *, analysis: str | None = None, agreement: str = "", overlap: str = "", matched_passages: int | None = None,
                 scored_prs: int | None = None, intervals: dict | None = None) -> None:
         html.append('<div class="overview-scores"><section id="scores" tabindex="-1"><div class="score-heading"><h2>Reviewer scores</h2>')
         if matched_passages is not None:
@@ -720,6 +727,7 @@ class ReportBuilder:
             ReportBuilder._score_table(html, "Reviewer scores", ("Precision", "Reference recall", "Additional findings"),
                                        rows, (1, 2, 4), primary=True, intervals=intervals)
             html.append(_interval_chart(rows, intervals))
+            html.append(overlap)
             if any(int(row[7]) or int(row[8]) for row in rows):
                 html.append('<p class="score-grading-note subtle"><strong>Grading incomplete.</strong> '
                             'Scores reflect verdicts recorded so far. See Additional metrics for outstanding findings.</p>')
@@ -965,7 +973,8 @@ class ReportBuilder:
     @staticmethod
     def _issues(html: list[str], key: str, group: dict, providers: list[str], verified: list[dict]) -> None:
         rows = issue_rows(group, verified)
-        html.append(f'<div class="case-issues" data-context-case="{escape(key, quote=True)}">'
+        case_key = escape(key, quote=True)
+        html.append(f'<div class="case-issues" id="problems-{case_key}" data-context-case="{case_key}" tabindex="-1">'
                     f'<h3>Compare by problem{info("problems")}</h3>')
         if not rows:
             if not any(pair["status"] == "completed" for pair in group.values()):

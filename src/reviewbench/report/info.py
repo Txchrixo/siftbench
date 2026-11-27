@@ -157,7 +157,7 @@ _ENTRIES: dict[str, dict] = {
     },
     "latency": {
         "kind": "Timing", "tone": "hl", "title": "Review publication times",
-        "lead": 'How long a reviewer took from <b class="hl">starting its review</b> to <b class="hl">publishing</b> a verified result.',
+        "lead": 'Time from the recorded review start to the <b class="hl">verified GitHub publication signal</b>.',
         "points": (
             ("hl", "Each dot", "One observed review. Select it to open the original evidence."),
             ("hl", "Dashed line", "The median: half the reviews were faster, half slower."),
@@ -172,18 +172,19 @@ _ENTRIES: dict[str, dict] = {
         "note": "Counted only on pull requests that are fully graded.",
     },
     "review_completion": {
-        "kind": "Operational metric", "tone": "hl", "title": "Review completion",
-        "lead": 'Time from <b class="hl">review start</b> until the review was <b class="hl">published</b>.',
+        "kind": "Operational metric", "tone": "hl", "title": "Review publication",
+        "lead": 'Time from the recorded review start to a verified GitHub <b class="hl">review submission or completed check</b>.',
         "points": (
-            ("hl", "Median and p95", "Median is the typical review. p95 is the slow end: 95% finished sooner."),
+            ("hl", "Median and p95", "Half of the observed signals arrived within the median. 95% arrived within the p95."),
             ("mute", "n", "How many valid times the figure rests on."),
         ),
+        "note": "Comments can appear before or after this signal. The signal type depends on the reviewer and PR.",
     },
     "first_verified": {
         "kind": "Operational metric", "tone": "ok", "title": "First verified finding",
         "lead": 'Time until the first finding the benchmark <b class="ok">confirmed</b> was published.',
         "points": (
-            ("hl", "Why it differs", "A review can finish later than its first useful comment."),
+            ("hl", "Why it differs", "A confirmed comment can appear before or after the GitHub publication signal."),
             ("mute", "n", "How many reviews produced a confirmed finding."),
         ),
     },
@@ -301,7 +302,7 @@ _ENTRIES: dict[str, dict] = {
 }
 
 _KEYS = {"Precision": "precision", "Reference recall": "recall", "False positives": "false_positives",
-         "Severe findings missed": "severe_missed", "Review completion": "review_completion",
+         "Severe findings missed": "severe_missed", "Review publication": "review_completion",
          "First verified finding": "first_verified", "Observed cost": "observed_cost",
          "Additional findings": "additional", "Context requests": "context_requests", "Duplicates": "duplicates",
          "Unresolved": "unresolved", "Ungraded": "ungraded"}

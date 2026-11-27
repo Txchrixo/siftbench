@@ -1,8 +1,8 @@
 # SiftBench Architecture
 
-**Design decision.** SiftBench compares AI code reviewers on pinned GitHub pull requests. A Python runner collects reviews, SQLite stores campaign state and evidence references, and a static web report presents the findings and human verdicts. Archived inputs and verdicts reproduce a score. A new review from a provider may differ even with the same inputs.
+**Design decision.** SiftBench compares AI code reviewers on pinned GitHub pull requests. A Python runner collects reviews, SQLite stores campaign state and evidence references, and a static web report presents the findings and recorded verdicts. Archived inputs and verdicts reproduce a score. A new review from a provider may differ even with the same inputs.
 
-The [implementation plan](PLAN.md) defines the work order and completion criteria. This document defines boundaries, responsibilities, and guarantees. Class, module, and schema names describe the proposed implementation. The diagrams below use the same theme as the [browser gallery](architecture.html). Each diagram links to its editable Mermaid source and full-size image.
+This document describes the runner, evidence store and report generator. The diagrams below use the same theme as the [browser gallery](ARCHITECTURE.html). Each diagram links to its editable Mermaid source and full-size image.
 
 ## How to read the diagrams
 
@@ -15,7 +15,7 @@ The structural views follow C4, and the sequence diagrams follow arc42's runtime
 
 ## Diagram and project theme
 
-The diagrams use the [shared project palette](theme.css). Text labels carry the meaning of status colors. The implementation plan defines how the web report uses the same tokens.
+The diagrams use the [shared project palette](theme.css). Text labels carry the meaning of status colors. The web report uses the same tokens.
 
 ## 01. System context
 
@@ -46,7 +46,7 @@ The context diagram uses the three providers' official monochrome marks. [Proofl
 - `ManifestLoader` validates cases, conditions, SHAs, and allowed repositories. It produces the resolved manifest saved with the campaign. `resume` reloads it and checks its digest.
 - `CampaignRunner` picks actions from attempt state and owns deadline policy. `PullRequestProvisioner` materializes the diff and reconciles a PR by repository, base, and branch. `GitHubClient` owns HTTP transport, pagination, and rate limits.
 - `ReviewerAdapter` describes publisher identity, trigger mode, and the completion signal verified on a pilot PR. `ReviewCollector` archives messages and checks their scope. Manual triggers can be tracked with evidence recorded by the operator.
-- `VerdictImporter` validates human decisions. `ScoreCalculator` operates on a frozen batch and can be tested in memory. `ReportBuilder` renders from the same result model as the Markdown summary. With `--bundle`, it loads the validated JSON snapshot in place of local state.
+- `VerdictImporter` validates recorded decisions. `ScoreCalculator` operates on a frozen batch and can be tested in memory. `ReportBuilder` renders from the same result model as the Markdown summary. With `--bundle`, it loads the validated JSON snapshot in place of local state.
 
 Review output can arrive through several GitHub API surfaces. Reading those surfaces and deciding that a review is complete are separate responsibilities. [GitHub reviews](https://docs.github.com/en/rest/pulls/reviews) · [Inline comments](https://docs.github.com/en/rest/pulls/comments) · [General comments](https://docs.github.com/en/rest/issues/comments) · [Check runs](https://docs.github.com/en/rest/checks/runs)
 

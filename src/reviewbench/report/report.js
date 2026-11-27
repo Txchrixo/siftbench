@@ -131,6 +131,12 @@ function showRoute(scroll = true, focus = true) {
     const reviewer = reviewerInputs.find(input => input.value === panel.dataset.provider);
     if (reviewer) reviewer.checked = true;
     showComparison(false, target.dataset.pair ? `#${target.id}` : "");
+  } else if (target?.dataset.contextCase) {
+    cases.value = target.dataset.contextCase;
+    if (!reviewerInputs.some(input => input.checked)) {
+      for (const input of reviewerInputs) input.checked = true;
+    }
+    showComparison();
   }
   if (scroll) {
     const destination = target || currentView;

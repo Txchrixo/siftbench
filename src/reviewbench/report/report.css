@@ -1035,6 +1035,25 @@ option:not(:checked) .option-check { transform: scale(.4); }
 .interval-ticks li { inline-size: 0; display: grid; justify-content: center; }
 .interval-ticks li:first-child { justify-content: start; }
 .interval-ticks li:last-child { justify-content: end; }
+.overlap-rows.is-scrollable { max-block-size: 24rem; overflow-y: auto; }
+.overlap-row { margin: 0; border-block-start: 1px solid var(--border); }
+.overlap-row > summary { display: grid; grid-template-columns: auto minmax(8rem, 16rem) minmax(3rem, 1fr) minmax(2ch, auto); align-items: center; gap: var(--space-2); min-block-size: 2.75rem; padding: var(--space-2); }
+.overlap-row > summary:focus-visible { outline-offset: -2px; }
+.overlap-row .overlap-label { margin-inline-start: 0; overflow-wrap: anywhere; }
+.overlap-count { text-align: end; font-variant-numeric: tabular-nums; }
+.overlap-row meter { display: block; inline-size: 100%; block-size: .45rem; appearance: none; border: 0; border-radius: .25rem; background: var(--surface); }
+.overlap-row meter::-webkit-meter-bar { height: 100%; border: 0; border-radius: .25rem; background: var(--surface); }
+.overlap-row meter::-webkit-meter-optimum-value { background: var(--info); border-radius: .25rem; }
+.overlap-row meter::-moz-meter-bar { background: var(--info); border-radius: .25rem; }
+.overlap-missed meter::-webkit-meter-optimum-value { background: var(--text-secondary); }
+.overlap-missed meter::-moz-meter-bar { background: var(--text-secondary); }
+.overlap-cases { display: grid; gap: var(--space-2); margin: 0; padding: 0 var(--space-2) var(--space-3) var(--space-6); list-style: none; font-size: .8125rem; }
+.overlap-cases li { padding-block-start: var(--space-2); border-block-start: 1px solid var(--border); overflow-wrap: anywhere; }
+.overlap-cases a { font-weight: 700; }
+.overlap-cases span, .overlap-cases p { display: block; margin-block-start: .125rem; }
+@media (max-width: 30rem) {
+  .overlap-row > summary { grid-template-columns: auto minmax(0, 1fr) minmax(3rem, 28%) minmax(2ch, auto); }
+}
 .data-tip { position: fixed; z-index: 10; display: grid; gap: .125rem; inline-size: max-content; max-inline-size: min(20rem, calc(100vw - 1rem)); margin: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--text-primary); box-shadow: 0 .65rem 1.5rem var(--primary); font-size: .8125rem; line-height: 1.45; pointer-events: none; animation: pop-in 140ms var(--ease-out); }
 .data-tip[hidden] { display: none; }
 .data-tip strong { font-size: .875rem; }

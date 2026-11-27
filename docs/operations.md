@@ -23,7 +23,7 @@ reviewbench draft-rubric --sources private/sources.json --catalog private/discov
 
 The draft includes correction messages, diffs and test file names where available. Keep it private. Validate the evidence and enter `approved_by` and a time-zone-qualified `approved_at` for each case. Add an `expected` item with `expected_id`, `case_id`, `condition`, and `matching_criteria` for each reference problem. Add `severity` when the evidence supports it. Clean controls require approval and zero expected findings. Use human approval by default. If the operator explicitly delegates corpus approval to an AI reviewer, record the actual reviewer in `approved_by`, use `approval_kind: "operator_delegated_ai"`, and disclose the method in the campaign report. Set `neutral_title` on any case where the original title gives away the answer. Approve all material before viewing reviewer output.
 
-Supply a private JSON array of [manifest targets](../benchmark/pilot/pagination/campaign.toml). Map CodeRabbit, Greptile and Proofline to separate private repositories for each project and condition. Record actual publisher, trigger, review-completion policy and known vendor version. Repository names come from the operator.
+Supply a private JSON array of manifest targets. Map CodeRabbit, Greptile and Proofline to separate private repositories for each project and condition. Record actual publisher, trigger, review-completion policy and known vendor version. Repository names come from the operator.
 
 ```sh
 reviewbench prepare-repos --sources private/sources.json --catalog private/discovery/catalog.json --rubric private/rubric.json --targets private/targets.json --run-id cohort-2026-a --repeats 3 --out private/cohort-a
@@ -77,14 +77,6 @@ The primary score for the multi-project protocol uses matching passages complete
 Audit reads GitHub without changing the campaign. Exit code `2` means at least one source could not be verified. Review the details before treating an absence as zero findings. Run comparisons require matching pinned case inputs and rubric bytes. Use the paired sample rows to inspect cases and repetitions that completed in both runs, and use the separate coverage counts to see where the set changed. An unscored sample contributes no score.
 
 To add a provider without rerunning the archived reviewers, generate its result bundle separately, then run `reviewbench extend-report` with both bundles and their pinned manifests. It requires disjoint reviewers, identical inputs and the same loaded rubric. The expanded report lists both source runs and scores only completed shared case conditions. Keep the source bundles for individual GitHub audits.
-
-The five CodeRabbit verdicts were generated with AI assistance, then reviewed and approved by the operator, and checked against the pinned revisions using SQLite, CSV parsing, or the receiver simulation. The snapshot verdict records which parts of the Cedar criterion the finding covered. [CodeRabbit verdicts and test evidence](../benchmark/official/coderabbit-verdicts.jsonl)
-
-To replay the archived grading, import the verdicts for the original claim IDs.
-
-```bash
-reviewbench grade import --run-id proofline-official-v1-coderabbit --rubric benchmark/official/expected.json --in benchmark/official/coderabbit-verdicts.jsonl
-```
 
 Operational metrics display the number of observations along with p50 and p95 timing. First useful finding uses the original publication time of the first finding confirmed by the rubric. False positives per PR use fully graded samples. Severe misses require a severity-tagged rubric. Cost is optional. Supply `report --costs` with a JSON array of `attempt_id`, `currency`, `amount_minor`, and `source` records based on observed billing. Keep unmeasured values absent. View a small sample's actual counts alongside its percentages and percentiles.
 

@@ -5,6 +5,7 @@ import pytest
 from reviewbench.grading import ScoreCalculator
 from reviewbench.manifest import digest
 from reviewbench.report import ReportBuilder, _link
+from reviewbench.report.overlap import reference_overlap
 from reviewbench.store import StoreError
 
 
@@ -29,6 +30,29 @@ def test_metrics_only_use_shared_completed_baseline_pairs():
                                          "justified_context_requests": 1, "ungraded": 1}
     assert result["providers"]["b"]["adjudicated"] == 0
     assert result["providers"]["b"]["expected"] == 1
+
+
+def test_reference_overlap_counts_each_graded_reference_once():
+    def pair(provider, case, *decisions, repeat=0):
+        return {"provider_id": provider, "case_id": case, "condition": "code_only", "repeat_index": repeat,
+                "expected": [{"expected_id": "known", "matching_criteria": "Known problem"}],
+                "claims": [{"decision": decision, "expected_id": "known"} for decision in decisions]}
+
+    providers = ["coderabbit", "greptile"]
+    cases = [pair("coderabbit", "one", "confirmed_expected", "confirmed_expected"), pair("greptile", "one"),
+             pair("coderabbit", "one", repeat=1), pair("greptile", "one", repeat=1),
+             pair("coderabbit", "two", "confirmed_expected"), pair("greptile", "two", "confirmed_expected"),
+             pair("coderabbit", "pending", "unresolved"), pair("greptile", "pending"),
+             pair("coderabbit", "outside"), pair("greptile", "outside")]
+    samples = {("one", "code_only", 0), ("one", "code_only", 1), ("two", "code_only", 0), ("pending", "code_only", 0)}
+
+    html = reference_overlap(cases, samples, providers)
+    assert html.startswith('<details class="additional-scores interval-details" id="reference-overlap">')
+    assert "3 reference findings" in html
+    assert all(f'>{label}</span>' in html for label in ("All 2 reviewers", "CodeRabbit only", "Detected by no reviewer"))
+    assert html.count('value="1"') == 3
+    assert 'href="#problems-one:code_only:1"' in html
+    assert "problems-pending" not in html and "problems-outside" not in html
 
 
 def test_untrusted_report_rejects_bad_identifiers_and_evidence(tmp_path):
