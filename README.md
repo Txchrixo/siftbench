@@ -4,6 +4,15 @@
 
 <h1 align="center">A benchmark for AI code reviewers</h1>
 
+<p align="center">
+  <a href="https://github.com/Txchrixo/siftbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Txchrixo/siftbench/ci.yml?branch=main&label=CI" alt="CI status"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB" alt="Python 3.11+"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/dependencies-none-22C55E" alt="No runtime dependencies"></a>
+  <a href="https://txchrixo.github.io/siftbench/"><img src="https://img.shields.io/badge/campaign-150%20reviews-38BDF8" alt="Campaign: 150 reviews"></a>
+  <a href="#benchmark-results"><img src="https://img.shields.io/badge/reviewers-CodeRabbit%20%C2%B7%20Greptile%20%C2%B7%20Proofline-2563EB" alt="Reviewers: CodeRabbit, Greptile, Proofline"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-0.2.0-52525B" alt="Version 0.2.0"></a>
+</p>
+
 SiftBench runs reviewers on pinned GitHub pull requests, saves the first eligible review, and traces each scored finding to its comment, verdict, and supporting evidence. The Python runner can resume an interrupted campaign. The HTML report can be rebuilt offline from an archived bundle.
 
 [<img src="assets/readme/results.svg" alt="" width="16" height="16" valign="middle"> View results](https://txchrixo.github.io/siftbench/) ·
