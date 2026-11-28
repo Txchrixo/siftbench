@@ -272,41 +272,5 @@ if (typeof dialog?.showModal === "function") {
   });
 }
 
-for (const figure of document.querySelectorAll(".latency-figure")) {
-  const tip = figure.querySelector(".latency-tip");
-  const place = (x, y) => {
-    const box = figure.getBoundingClientRect();
-    const width = tip.offsetWidth;
-    const left = Math.min(Math.max(x - box.left - width / 2, 0), box.width - width);
-    const above = y - box.top - tip.offsetHeight - 14;
-    tip.style.left = `${left}px`;
-    tip.style.top = `${above < 0 ? y - box.top + 22 : above}px`;
-  };
-  const show = (point, x, y) => {
-    const { tipTitle, tipContext, tipValue } = point.dataset;
-    const title = document.createElement("strong");
-    title.textContent = tipTitle;
-    const context = document.createElement("span");
-    context.textContent = tipContext;
-    const value = document.createElement("output");
-    value.textContent = tipValue;
-    tip.replaceChildren(title, context, value);
-    tip.hidden = false;
-    place(x, y);
-  };
-  const hide = () => { tip.hidden = true; };
-  for (const point of figure.querySelectorAll(".latency-point")) {
-    point.addEventListener("pointerenter", event => show(point, event.clientX, event.clientY));
-    point.addEventListener("pointermove", event => place(event.clientX, event.clientY));
-    point.addEventListener("pointerleave", hide);
-    point.addEventListener("focus", () => {
-      const dot = point.querySelector(".latency-dot").getBoundingClientRect();
-      show(point, dot.left + dot.width / 2, dot.top + dot.height / 2);
-    });
-    point.addEventListener("blur", hide);
-  }
-  figure.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
-}
-
 showComparison();
 showRoute(Boolean(location.hash), false);

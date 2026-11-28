@@ -401,7 +401,7 @@ def _csp_hash(value: str) -> str:
 
 def _report_styles(*, operational: bool = False, assistants: bool = False) -> str:
     root = files(__package__)
-    names = ("theme.css", "report.css", "analysis.css") if operational else ("theme.css", "report.css")
+    names = ("theme.css", "report.css", "charts.css") + (("analysis.css",) if operational else ())
     css = "".join(root.joinpath(name).read_text(encoding="utf-8") for name in names)
     css = css.replace("__MANROPE__", _encoded("manrope-latin.woff2"))
     for reviewer, extension in _REVIEWER_MARKS.items():
