@@ -9,10 +9,7 @@ on:
       - benchmark/evaluation-v2/summary.json
       - benchmark/evaluation-v2/public-charts.json
       - assets/brand/**
-      - src/reviewbench/report/theme.css
-      - src/reviewbench/report/icons.py
-      - src/reviewbench/report/footer-wordmark.svg
-      - src/reviewbench/report/reviewer-*
+      - src/reviewbench/**
   workflow_dispatch:
 
 permissions:
@@ -39,6 +36,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Build public report
+        env:
+          PYTHONPATH: src
         run: python3 docs/results-page/build.py dist/pages
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

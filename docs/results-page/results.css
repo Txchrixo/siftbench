@@ -10,7 +10,15 @@
   color-scheme: dark;
   scrollbar-color: var(--text-muted) var(--background);
   --ease-out: cubic-bezier(.2, .65, .3, 1);
+  --fast: 140ms;
   --inset: clamp(.875rem, 2vw, 1.5rem);
+  /* Tokens used by charts.css, shared with the HTML reports. */
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --panel-inset: var(--inset);
 }
 body {
   margin: 0;
@@ -54,11 +62,15 @@ tbody th { font-weight: 750; }
 .reviewer { display: inline-flex; align-items: center; gap: .45rem; font-weight: 750; overflow-wrap: anywhere; }
 .reviewer img { flex: 0 0 20px; border-radius: .2rem; }
 .scores td strong { display: block; font-size: clamp(1.1rem, 3vw, 1.55rem); line-height: 1.3; }
+.reviewer-name { display: inline-flex; align-items: center; gap: .45rem; min-inline-size: 0; font-weight: 750; overflow-wrap: anywhere; }
+.reviewer-mark { flex: 0 0 1rem; block-size: 1rem; border-radius: .2rem; background: center / contain no-repeat; }
+.reviewer-mark.coderabbit { background-image: url("reviewer-coderabbit.svg"); }
+.reviewer-mark.greptile { background-image: url("reviewer-greptile.png"); }
+.reviewer-mark.proofline { background-image: url("reviewer-proofline.png"); }
+.scores .range { justify-items: start; inline-size: min(100%, 10rem); margin: .35rem 0 0; }
+.scores .fraction, .scores small { display: block; }
 .fraction, .scores small { color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
-.range { position: relative; display: block; height: 3px; margin: .55rem 0 .35rem; background: var(--text-muted); border-radius: 2px; }
-.range i { position: absolute; height: 3px; inset-inline-start: var(--low); width: calc(var(--high) - var(--low)); background: var(--info); border-radius: 2px; }
-.range::after { content: ""; position: absolute; top: -3px; inset-inline-start: clamp(0px, calc(var(--score) - 4px), calc(100% - 8px)); width: 8px; height: 8px; border-radius: 50%; background: var(--text-primary); }
-.guide dd, .section-heading p, .disclosure-body p, .muted, .report-footer { color: var(--text-secondary); font-size: .875rem; }
+.subtle, .guide dd, .section-heading p, .disclosure-body p, .muted, .report-footer { color: var(--text-secondary); font-size: .875rem; }
 .guide dl { margin: 0; border-block: 1px solid var(--border); }
 .guide dl div + div { margin-top: .8rem; }
 .guide dt { font-weight: 750; }
@@ -67,6 +79,19 @@ tbody th { font-weight: 750; }
 .guide dl { flex: 1; }
 .panel-link { display: block; font-size: .875rem; }
 .section-stack, .section-panel { margin-top: 1.25rem; }
+.panel-note { margin: 0; padding: .75rem var(--inset) 1rem; color: var(--text-secondary); font-size: .8125rem; }
+.interval-details { border-top: 1px solid var(--border); border-radius: 0; }
+.overlap-list { margin: .8rem 0 0; padding: 0; list-style: none; }
+.overlap-list > .overlap-row { display: grid; grid-template-columns: minmax(10rem, 15rem) minmax(3rem, 1fr) minmax(2ch, auto); gap: .75rem; align-items: center; padding-block: .45rem; font-size: .875rem; }
+.overlap-list > .overlap-row:first-child { border-block-start: 0; }
+.section-body { padding: 0 var(--inset) 1rem; }
+.latency-figure { margin: 0; }
+.latency-figure h3 { display: flex; align-items: center; margin: 0; font-size: 1rem; }
+.latency-figure figcaption p { margin: 0; }
+.timing-summary { min-inline-size: 34rem; }
+.timing-summary td { font-size: .875rem; color: var(--text-secondary); }
+.timing-summary strong { color: var(--text-primary); }
+.timing-summary small { display: block; font-size: .75rem; }
 .section-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; }
 .section-heading { padding: 1.15rem var(--inset); }
 .section-heading h2 { padding: 0; font-size: 1.28rem; }
@@ -110,30 +135,6 @@ summary .report-icon { color: var(--text-secondary); }
 .detail-table td, .detail-table th:not(:first-child) { text-align: end; }
 .detail-table tbody tr:hover { background: var(--surface); }
 .distribution { min-inline-size: 35rem; }
-.first-finding { min-inline-size: 0; }
-.overlap-list, .timing-list { list-style: none; padding: 0; margin: .8rem 0 0; }
-.overlap-list li { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr 2ch; gap: .75rem; align-items: center; padding: .45rem 0; font-size: .875rem; }
-.overlap-list li + li { border-top: 1px solid var(--border); }
-.overlap-list strong { text-align: end; font-variant-numeric: tabular-nums; }
-.overlap-track, .timing-track { display: block; position: relative; height: .25rem; border-radius: 3px; background: var(--text-muted); }
-.overlap-track i { display: block; width: var(--count); height: 100%; border-radius: inherit; background: var(--info); }
-.timing-figure { padding: 0 var(--inset) 1rem; margin: 0; }
-.timing-key, .timing-key span { display: flex; align-items: center; gap: .5rem; }
-.timing-key { gap: 1rem; justify-content: flex-end; color: var(--text-secondary); font-size: .75rem; }
-.timing-key i, .timing-track::before, .timing-track::after { width: .65rem; height: .65rem; border-radius: 50%; background: var(--info); }
-.timing-key span + span i, .timing-track::after { background: var(--secondary); border: 1.5px solid var(--text-secondary); }
-.timing-list li, .timing-axis { display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 1rem; align-items: center; }
-.timing-list li { border-top: 1px solid var(--border); padding: .8rem 0; }
-.timing-list p { margin: .2rem 0 0; color: var(--text-secondary); font-size: .875rem; font-variant-numeric: tabular-nums; }
-.timing-list strong, .first-finding strong { color: var(--text-primary); }
-.timing-list small, .first-finding small { display: block; color: var(--text-secondary); font-size: .75rem; }
-.timing-track::before, .timing-track::after { content: ""; position: absolute; top: 50%; transform: translate(-50%, -50%); }
-.timing-track::before { left: var(--p50); }
-.timing-track::after { left: var(--p95); }
-.timing-axis { grid-template-columns: minmax(12rem, 16rem) repeat(3, minmax(0, 1fr)); color: var(--text-secondary); font-size: .75rem; font-variant-numeric: tabular-nums; }
-.timing-axis span:first-child { grid-column: 2; }
-.timing-axis span:nth-child(2) { text-align: center; }
-.timing-axis span:last-child { text-align: end; }
 .report-footer { position: relative; margin-top: 2.5rem; padding-block: 1.5rem 1rem; }
 .report-footer::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: var(--border); mask: linear-gradient(to right, transparent, #000 18% 82%, transparent); }
 .footer-top strong { color: var(--text-primary); }
@@ -162,10 +163,7 @@ summary .report-icon { color: var(--text-secondary); }
   .header-inner nav { gap: .8rem; }
   .header-inner nav a { font-size: .8125rem; }
   .header-inner .report-icon { display: none; }
-  .timing-list li { grid-template-columns: 1fr; gap: .6rem; }
-  .timing-axis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .timing-axis span:first-child { grid-column: 1; }
-  .overlap-list li { grid-template-columns: minmax(0, 1fr) minmax(2.75rem, 25%) 2ch; gap: .5rem; }
+  .overlap-list > .overlap-row { grid-template-columns: minmax(0, 1fr) minmax(2.75rem, 25%) minmax(2ch, auto); gap: .5rem; }
 }
 
 @media (max-width: 25rem) {

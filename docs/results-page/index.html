@@ -7,8 +7,10 @@
   <title>Benchmark results · SiftBench</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="charts.css">
   <link rel="stylesheet" href="results.css">
   <script src="results.js" defer></script>
+  <script src="info.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to results</a>
@@ -32,8 +34,8 @@
     </div>
 
     <dl class="totals" aria-label="Campaign at a glance">
-      <div><dt>Completed reviews</dt><dd>$completed/$planned</dd></div>
-      <div><dt>Shared cases scored</dt><dd>$scored_prs</dd></div>
+      <div><dt>Completed reviews$info_completed_attempts</dt><dd>$completed/$planned</dd></div>
+      <div><dt>Shared cases scored$info_scored_conditions</dt><dd>$scored_prs</dd></div>
       <div><dt>Reference findings</dt><dd>$expected</dd></div>
     </dl>
 
@@ -42,16 +44,11 @@
         <h2 id="score-title">Reviewer scores</h2>
         <table class="scores">
           <caption class="visually-hidden">Precision and reference recall on the shared scored cases</caption>
-          <thead><tr><th scope="col">Reviewer</th><th scope="col">Precision</th><th scope="col">Reference recall</th></tr></thead>
+          <thead><tr><th scope="col">Reviewer</th><th scope="col">Precision$info_precision</th><th scope="col">Reference recall$info_recall</th></tr></thead>
           <tbody>$score_rows</tbody>
         </table>
-        <details class="analysis-disclosure">
-          <summary>How sure are these scores?</summary>
-          <div class="disclosure-body">
-            <p>Dots mark the observed scores. Lines show 95% confidence intervals from resampling whole PRs. An interval is omitted when the observations are insufficient or invariant.</p>
-            <p>These intervals reflect variation across sampled PRs. Each reviewer ran once per change, so variation between runs was not measured.</p>
-          </div>
-        </details>
+        $interval_chart
+        <p class="panel-note">Intervals reflect variation across sampled PRs. An interval is omitted when the observations are insufficient or invariant. Each reviewer ran once per change, so variation between runs was not measured.</p>
       </section>
 
       <aside class="panel guide" aria-labelledby="guide-title">
@@ -79,7 +76,7 @@
         <summary>${icon_file}Additional findings and false positives</summary>
         <div class="table-region" role="region" aria-label="Other findings by reviewer" tabindex="0">
           <table class="detail-table">
-            <thead><tr><th scope="col">Reviewer</th><th scope="col">Additional findings</th><th scope="col">False positives</th><th scope="col">Duplicates</th></tr></thead>
+            <thead><tr><th scope="col">Reviewer</th><th scope="col">Additional findings</th><th scope="col">False positives</th><th scope="col">Duplicates$info_duplicates</th></tr></thead>
             <tbody>${finding_rows}</tbody>
           </table>
         </div>
@@ -88,14 +85,16 @@
 
     <section class="panel section-panel" id="timing" aria-labelledby="timing-title">
       <header class="section-heading">
-        <h2 id="timing-title">Review publication times</h2>
-        <p>Elapsed time from the recorded review start to the verified GitHub review submission or completed check. Individual comments can appear before or after that signal.</p>
+        <h2 id="timing-title">Timing</h2>
+        <p>How long each reviewer took to publish its review on the same pinned changes.</p>
       </header>
-      <figure class="timing-figure" aria-labelledby="timing-title">
-        <figcaption class="timing-key"><span><i></i>Median</span><span><i></i>95th percentile</span></figcaption>
-        <ul class="timing-list">${timing_rows}</ul>
-        <div class="timing-axis" aria-hidden="true"><span>0 s</span><span>$timing_midpoint s</span><span>$timing_limit s</span></div>
-      </figure>
+      <div class="section-body">${latency_figure}</div>
+      <div class="table-region" role="region" aria-label="Timing summary" tabindex="0">
+        <table class="detail-table timing-summary">
+          <thead><tr><th scope="col">Reviewer</th><th scope="col">Review publication$info_review_completion</th><th scope="col">First verified finding$info_first_verified</th></tr></thead>
+          <tbody>$timing_rows</tbody>
+        </table>
+      </div>
       <details class="analysis-disclosure">
         <summary>Publication time distribution</summary>
         <div class="disclosure-body"><p>Number of reviews in each elapsed-time band, in seconds.</p></div>
@@ -103,16 +102,6 @@
           <table class="detail-table distribution">
             <thead><tr><th scope="col">Reviewer</th>$distribution_headers</tr></thead>
             <tbody>$distribution_rows</tbody>
-          </table>
-        </div>
-      </details>
-      <details class="analysis-disclosure">
-        <summary>Time to first verified finding</summary>
-        <div class="disclosure-body"><p>Only reviews with a verified finding and a recorded timestamp contribute. Sample sizes differ by reviewer.</p></div>
-        <div class="table-region" role="region" aria-label="Time to first verified finding" tabindex="0">
-          <table class="detail-table first-finding">
-            <thead><tr><th scope="col">Reviewer</th><th scope="col">Elapsed seconds</th></tr></thead>
-            <tbody>$first_finding_rows</tbody>
           </table>
         </div>
       </details>
@@ -144,7 +133,7 @@
       <details class="analysis-disclosure">
         <summary>Grading and agreement</summary>
         <div class="disclosure-body">
-          <p>Initial verdicts were AI-assisted against the frozen rubric. Three Claude models assessed the same claims separately with reviewer labels removed, although wording could still reveal the source. They agreed unanimously on <strong>$unanimous of $annotated ($agreement_percent%)</strong>, with Fleiss’ κ of <strong>$kappa</strong>. The models share a family and can share systematic errors.</p>
+          <p>Initial verdicts were AI-assisted against the frozen rubric. Three Claude models assessed the same claims separately with reviewer labels removed, although wording could still reveal the source. They agreed unanimously on <strong>$unanimous of $annotated ($agreement_percent%)</strong>, with Fleiss’ κ of <strong>$kappa</strong>$info_agreement. The models share a family and can share systematic errors.</p>
           <p>Disagreements were adjudicated against the pinned sources. Two PRs with unresolved findings remain in coverage. Scores use the $scored_prs fully graded cases shared by all three reviewers.</p>
         </div>
       </details>
@@ -169,5 +158,6 @@
       <img class="footer-wordmark" src="footer-wordmark.svg" alt="" width="270" height="64">
     </footer>
   </main>
+  $info_templates
 </body>
 </html>

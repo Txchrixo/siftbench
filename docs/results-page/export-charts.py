@@ -1,4 +1,8 @@
-"""Extract counts for the public charts from an archived campaign bundle."""
+"""Extract the anonymous public chart data from an archived campaign bundle.
+
+Only counts and elapsed times leave the bundle. Pull requests, reviewer text, repository links and
+rubric content stay in the private report.
+"""
 
 import argparse
 from bisect import bisect_right
@@ -14,6 +18,7 @@ def export(bundle: dict) -> dict:
     samples = ScoreCalculator.calculate(bundle)["shared_samples"]
     bounds = [60, 120, 180, 240, 360, 600]
     buckets = defaultdict(lambda: [0] * (len(bounds) + 1))
+    times = defaultdict(list)
     detected = {}
     for pair in bundle["pairs"]:
         provider = pair["provider_id"]
@@ -22,6 +27,7 @@ def export(bundle: dict) -> dict:
             duration = _elapsed(timing.get("review_started_at"), timing.get("published_at"))
             if duration is not None:
                 buckets[provider][bisect_right(bounds, duration)] += 1
+                times[provider].append(duration)
         if (sample := sample_key(pair)) in samples:
             for reference in pair["expected"]:
                 detected.setdefault((sample, reference["expected_id"]), set())
@@ -34,6 +40,7 @@ def export(bundle: dict) -> dict:
     return {
         "publication_bounds_seconds": bounds,
         "publication_bins": dict(sorted(buckets.items())),
+        "publication_seconds": {provider: sorted(values) for provider, values in sorted(times.items())},
         "reference_overlap": [
             {"reviewers": reviewers, "count": count}
             for reviewers, count in sorted(combinations.items(), key=lambda row: (-len(row[0]), -row[1], row[0]))
@@ -43,7 +50,7 @@ def export(bundle: dict) -> dict:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("bundle", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()

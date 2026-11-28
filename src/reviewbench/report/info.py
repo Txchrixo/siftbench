@@ -164,6 +164,15 @@ _ENTRIES: dict[str, dict] = {
             ("warn", "Not a race", "Reviewers may have run in separate campaigns, so network and queue conditions differ."),
         ),
     },
+    "public_latency": {
+        "kind": "Timing", "tone": "hl", "title": "Review publication times",
+        "lead": 'Time from the recorded review start to the <b class="hl">verified GitHub publication signal</b>.',
+        "points": (
+            ("hl", "Each dot", "One observed review. Hover or focus it to read its time."),
+            ("hl", "Dashed line", "The median: half the reviews were faster, half slower."),
+            ("mute", "Anonymous", "This page shows times only. Individual pull requests and reviews stay in the private report."),
+        ),
+    },
     "severe_missed": {
         "kind": "Operational metric", "tone": "bad", "title": "Severe findings missed",
         "lead": 'Rubric problems rated <b class="bad">high or critical</b> that the reviewer did not catch.',
